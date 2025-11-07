@@ -1,9 +1,8 @@
 import mongoose from 'mongoose';
 
-const MAX_RETRIES = 5;
-const INITIAL_RETRY_DELAY = 3000; // 3 seconds
-
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Disable mongoose buffering globally for serverless
+// This prevents timeout errors when connection isn't ready
+mongoose.set('bufferCommands', false);
 
 // For serverless: simpler connection without complex retry logic
 export const connectDB = async () => {
@@ -39,14 +38,9 @@ export const connectDB = async () => {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       serverSelectionTimeoutMS: 5000, // Reduced timeout for serverless
       socketTimeoutMS: 45000,
-      // Critical: Disable buffering to prevent timeout errors
-      bufferCommands: false,
-      bufferMaxEntries: 0,
-      // Optimize for serverless
+      // Optimize for serverless - use smaller connection pool
       maxPoolSize: 1,
       minPoolSize: 1,
-      // Auto-reconnect settings
-      autoIndex: true,
       // Additional options for reliability
       connectTimeoutMS: 10000,
     });
