@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider, useNotification } from './contexts/NotificationContext';
 import { NotificationContainer } from './components/Notification';
@@ -25,41 +25,52 @@ function AppContent() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const lastScanIdRef = useRef(null);
   
   // Show notification when scan is received (matching Arduino LCD display exactly)
   useEffect(() => {
     if (lastScan && user) {
-      const scanType = lastScan.type;
+      // Create unique ID from scan data to prevent duplicates
+      const scanId = `${lastScan.type}_${lastScan.registrationNo}_${lastScan.checkInAt || Date.now()}`;
       
-      if (scanType === 'scan.error') {
-        // Match Arduino error display: "Error:" on line 1, error message on line 2
-        const errorMsg = lastScan.error || 'Unknown error';
-        showNotification({
-          type: 'error',
-          title: 'Error:',
-          message: errorMsg.length > 16 ? errorMsg.substring(0, 13) + '...' : errorMsg,
-          duration: 6000,
-        });
-      } else if (scanType === 'scan.duplicate') {
-        // Match Arduino: "Already Entered" on line 1, "status (dup)" on line 2
-        const status = lastScan.status || 'present';
-        const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
-        showNotification({
-          type: 'warning',
-          title: 'Already Entered',
-          message: `${statusLabel} (dup)`,
-          duration: 4000,
-        });
-      } else if (scanType === 'scan.ingested') {
-        // Match Arduino: "Allowed (status)" on line 1, "Attendance Saved" on line 2
-        const status = lastScan.status || 'present';
-        const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
-        showNotification({
-          type: 'success',
-          title: `Allowed (${statusLabel})`,
-          message: 'Attendance Saved',
-          duration: 5000,
-        });
+      if (scanId !== lastScanIdRef.current) {
+        lastScanIdRef.current = scanId;
+        console.log('Scan received for notification:', lastScan);
+        const scanType = lastScan.type;
+        
+        if (scanType === 'scan.error') {
+          // Match Arduino error display: "Error:" on line 1, error message on line 2
+          const errorMsg = lastScan.error || 'Unknown error';
+          console.log('Showing error notification:', errorMsg);
+          showNotification({
+            type: 'error',
+            title: 'Error:',
+            message: errorMsg.length > 16 ? errorMsg.substring(0, 13) + '...' : errorMsg,
+            duration: 6000,
+          });
+        } else if (scanType === 'scan.duplicate') {
+          // Match Arduino: "Already Entered" on line 1, "status (dup)" on line 2
+          const status = lastScan.status || 'present';
+          const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+          console.log('Showing duplicate notification:', statusLabel);
+          showNotification({
+            type: 'warning',
+            title: 'Already Entered',
+            message: `${statusLabel} (dup)`,
+            duration: 4000,
+          });
+        } else if (scanType === 'scan.ingested') {
+          // Match Arduino: "Allowed (status)" on line 1, "Attendance Saved" on line 2
+          const status = lastScan.status || 'present';
+          const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+          console.log('Showing success notification:', statusLabel);
+          showNotification({
+            type: 'success',
+            title: `Allowed (${statusLabel})`,
+            message: 'Attendance Saved',
+            duration: 5000,
+          });
+        }
       }
     }
   }, [lastScan, user, showNotification]);

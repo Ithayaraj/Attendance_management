@@ -45,9 +45,13 @@ export const Notification = ({ notification, onClose }) => {
 
   return (
     <div
-      className={`min-w-[320px] max-w-md transform transition-all duration-300 ${
+      className={`min-w-[320px] max-w-md transform transition-all duration-300 ease-in-out ${
         isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
       }`}
+      style={{ 
+        transform: isVisible ? 'translateX(0)' : 'translateX(100%)',
+        opacity: isVisible ? 1 : 0
+      }}
     >
       <div
         className={`${getBgColor()} rounded-lg shadow-lg border p-4 flex items-start gap-3`}
@@ -80,12 +84,18 @@ export const Notification = ({ notification, onClose }) => {
 };
 
 export const NotificationContainer = ({ notifications, onRemove }) => {
+  console.log('NotificationContainer render - notifications count:', notifications.length);
+  
   if (notifications.length === 0) return null;
   
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2 pointer-events-none max-w-sm w-full sm:max-w-md">
-      {notifications.map((notification) => (
-        <div key={notification.id} className="pointer-events-auto">
+    <div className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none max-w-sm w-full sm:max-w-md">
+      {notifications.map((notification, index) => (
+        <div 
+          key={notification.id} 
+          className="pointer-events-auto"
+          style={{ marginTop: index > 0 ? '8px' : '0' }}
+        >
           <Notification
             notification={notification}
             onClose={() => onRemove(notification.id)}

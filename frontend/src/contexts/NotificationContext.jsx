@@ -22,7 +22,12 @@ export const NotificationProvider = ({ children }) => {
       ...notification,
     };
 
-    setNotifications((prev) => [...prev, newNotification]);
+    console.log('Adding notification:', newNotification);
+    setNotifications((prev) => {
+      const updated = [...prev, newNotification];
+      console.log('Total notifications:', updated.length);
+      return updated;
+    });
     return id;
   }, []);
 

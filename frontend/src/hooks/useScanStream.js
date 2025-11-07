@@ -26,12 +26,15 @@ export const useScanStream = () => {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            console.log('WebSocket message received:', data);
 
             if (data.type === 'scan.ingested' || data.type === 'scan.duplicate') {
+              console.log('Setting lastScan for scan.ingested/duplicate');
               setLastScan({ ...data.payload, type: data.type });
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'scan.error') {
               // Handle scan errors for notifications
+              console.log('Setting lastScan for scan.error');
               setLastScan({ ...data.payload, type: data.type });
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'attendance.updated') {
