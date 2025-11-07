@@ -19,22 +19,64 @@ function AppContent() {
   const { user, loading, login, logout, loginLoading, logoutLoading } = useAuth();
   const { lastScan } = useScanStream();
   const { showNotification, notifications, removeNotification } = useNotification();
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  // Initialize currentPage from URL or default to dashboard
+  const getInitialPage = () => {
+    const path = window.location.pathname.slice(1) || 'dashboard';
+    const validPages = ['dashboard', 'students', 'courses', 'sessions', 'batches', 'analytics', 'settings'];
+    return validPages.includes(path) ? path : 'dashboard';
+  };
+
+  const [currentPage, setCurrentPage] = useState(getInitialPage());
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const lastScanIdRef = useRef(null);
+
+  // Sync URL with current page (only when user is logged in)
+  useEffect(() => {
+    if (user) {
+      const path = currentPage === 'dashboard' ? '/' : `/${currentPage}`;
+      window.history.pushState({ page: currentPage }, '', path);
+    }
+  }, [currentPage, user]);
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const path = window.location.pathname.slice(1) || 'dashboard';
+      const validPages = ['dashboard', 'students', 'courses', 'sessions', 'batches', 'analytics', 'settings'];
+      if (validPages.includes(path)) {
+        setCurrentPage(path);
+        setSelectedStudent(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Handle logout and redirect
+  const handleLogout = async () => {
+    await logout();
+    // Reset to dashboard and clear URL
+    setCurrentPage('dashboard');
+    setSelectedStudent(null);
+    window.history.pushState({}, '', '/');
+  };
   
   // Show notification when scan is received (matching Arduino LCD display exactly)
   useEffect(() => {
-    if (lastScan && user) {
+    if (!user) return; // Don't show notifications if not logged in
+    
+    if (lastScan) {
       // Create unique ID from scan data to prevent duplicates
-      const scanId = `${lastScan.type}_${lastScan.registrationNo}_${lastScan.checkInAt || Date.now()}`;
+      const scanId = `${lastScan.type}_${lastScan.registrationNo || 'unknown'}_${lastScan.checkInAt || Date.now()}`;
       
       if (scanId !== lastScanIdRef.current) {
         lastScanIdRef.current = scanId;
+        console.log('=== NOTIFICATION TRIGGER ===');
         console.log('Scan received for notification:', lastScan);
         const scanType = lastScan.type;
         
@@ -71,6 +113,8 @@ function AppContent() {
             duration: 5000,
           });
         }
+      } else {
+        console.log('Skipping duplicate scan notification');
       }
     }
   }, [lastScan, user, showNotification]);
@@ -166,13 +210,14 @@ function AppContent() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* Notification Container */}
+    <>
+      {/* Notification Container - Outside main layout for proper z-index */}
       <NotificationContainer 
         notifications={notifications} 
         onRemove={removeNotification} 
       />
       
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div 
@@ -190,12 +235,15 @@ function AppContent() {
         }}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onLogout={handleLogout}
+        logoutLoading={logoutLoading}
+        user={user}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden md:ml-64">
         <Header 
           user={user} 
-          onLogout={logout} 
+          onLogout={handleLogout} 
           title={getPageTitle()} 
           logoutLoading={logoutLoading}
           onMenuClick={() => setSidebarOpen(!sidebarOpen)}
@@ -225,6 +273,7 @@ function AppContent() {
         </main>
       </div>
     </div>
+    </>
   );
 }
 

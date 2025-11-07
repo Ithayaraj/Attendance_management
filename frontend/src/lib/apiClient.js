@@ -26,6 +26,16 @@ class ApiClient {
       const data = await response.json();
 
       if (!response.ok) {
+        // Handle 401 Unauthorized - token expired or invalid
+        if (response.status === 401) {
+          // Clear tokens and trigger logout
+          localStorage.removeItem('token');
+          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('user');
+          // Trigger a custom event for logout
+          window.dispatchEvent(new CustomEvent('auth:logout'));
+          throw new Error('Session expired. Please login again.');
+        }
         throw new Error(data.message || 'Request failed');
       }
 

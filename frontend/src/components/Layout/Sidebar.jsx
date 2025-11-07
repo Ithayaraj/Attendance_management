@@ -1,4 +1,4 @@
-import { Home, Users, BookOpen, Calendar, BarChart3, Settings, GraduationCap, X } from 'lucide-react';
+import { Home, Users, BookOpen, Calendar, BarChart3, Settings, GraduationCap, X, LogOut } from 'lucide-react';
 
 const Logo = () => (
   <div className="flex items-center gap-3">
@@ -26,7 +26,7 @@ const Logo = () => (
   </div>
 );
 
-export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose }) => {
+export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose, onLogout, logoutLoading, user }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'students', label: 'Students', icon: Users },
@@ -84,6 +84,20 @@ export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose }) =>
           </ul>
         </nav>
 
+        {/* Mobile Logout Button */}
+        {user && (
+          <div className="p-4 border-t border-slate-200 dark:border-slate-700 md:hidden">
+            <button
+              onClick={onLogout}
+              disabled={logoutLoading}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="text-sm font-medium">Logout</span>
+            </button>
+          </div>
+        )}
+
         <div className="p-4 border-t border-slate-200 dark:border-slate-700">
           <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-slate-800 dark:to-slate-800 rounded-lg p-4 border border-cyan-200 dark:border-slate-700">
             <div className="flex items-center gap-2 mb-2">
@@ -116,6 +130,20 @@ export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose }) =>
             ))}
           </ul>
         </nav>
+
+        {/* Desktop Logout Button */}
+        {user && (
+          <div className="p-4 border-t border-slate-200 dark:border-slate-700 hidden md:block">
+            <button
+              onClick={onLogout}
+              disabled={logoutLoading}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="text-sm font-medium">Logout</span>
+            </button>
+          </div>
+        )}
 
         <div className="p-4 border-t border-slate-200 dark:border-slate-700">
           <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-slate-800 dark:to-slate-800 rounded-lg p-4 border border-cyan-200 dark:border-slate-700">

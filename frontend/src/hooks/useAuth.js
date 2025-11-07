@@ -16,6 +16,17 @@ export const useAuth = () => {
     }
 
     setLoading(false);
+
+    // Listen for auth logout events (from API client on 401)
+    const handleLogout = () => {
+      setUser(null);
+    };
+
+    window.addEventListener('auth:logout', handleLogout);
+
+    return () => {
+      window.removeEventListener('auth:logout', handleLogout);
+    };
   }, []);
 
   const login = async (email, password) => {
@@ -43,16 +54,21 @@ export const useAuth = () => {
     try {
       setLogoutLoading(true);
       if (refreshToken) {
-        await apiClient.post('/api/auth/logout', { refreshToken });
+        try {
+          await apiClient.post('/api/auth/logout', { refreshToken });
+        } catch (error) {
+          // Ignore logout API errors, still clear local storage
+          console.error('Logout API error:', error);
+        }
       }
-    } catch (error) {
-      console.error('Logout error:', error);
     } finally {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
       setUser(null);
       setLogoutLoading(false);
+      // Dispatch logout event for other components
+      window.dispatchEvent(new CustomEvent('auth:logout'));
     }
   };
 

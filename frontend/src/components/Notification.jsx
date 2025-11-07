@@ -5,7 +5,7 @@ export const Notification = ({ notification, onClose }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // Trigger animation
+    // Show immediately
     setIsVisible(true);
     
     // Auto-close after duration
@@ -14,7 +14,9 @@ export const Notification = ({ notification, onClose }) => {
       setTimeout(() => onClose(), 300); // Wait for fade out
     }, notification.duration || 5000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [notification, onClose]);
 
   const getIcon = () => {
@@ -45,12 +47,12 @@ export const Notification = ({ notification, onClose }) => {
 
   return (
     <div
-      className={`min-w-[320px] max-w-md transform transition-all duration-300 ease-in-out ${
-        isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
-      }`}
+      className="min-w-[320px] max-w-md"
       style={{ 
-        transform: isVisible ? 'translateX(0)' : 'translateX(100%)',
-        opacity: isVisible ? 1 : 0
+        transform: isVisible ? 'translateX(0)' : 'translateX(calc(100% + 1rem))',
+        opacity: isVisible ? 1 : 0,
+        transition: 'all 0.3s ease-in-out',
+        willChange: 'transform, opacity'
       }}
     >
       <div
@@ -84,21 +86,31 @@ export const Notification = ({ notification, onClose }) => {
 };
 
 export const NotificationContainer = ({ notifications, onRemove }) => {
-  console.log('NotificationContainer render - notifications count:', notifications.length);
+  console.log('NotificationContainer render - notifications count:', notifications.length, notifications);
   
-  if (notifications.length === 0) return null;
+  if (notifications.length === 0) {
+    return null;
+  }
   
   return (
-    <div className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none max-w-sm w-full sm:max-w-md">
+    <div 
+      className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none"
+      style={{ 
+        maxWidth: '400px',
+        width: 'calc(100% - 2rem)',
+      }}
+    >
       {notifications.map((notification, index) => (
         <div 
           key={notification.id} 
-          className="pointer-events-auto"
-          style={{ marginTop: index > 0 ? '8px' : '0' }}
+          className="pointer-events-auto mb-2"
         >
           <Notification
             notification={notification}
-            onClose={() => onRemove(notification.id)}
+            onClose={() => {
+              console.log('Removing notification:', notification.id);
+              onRemove(notification.id);
+            }}
           />
         </div>
       ))}

@@ -1,8 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const WS_URL = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL.replace('http', 'ws') + '/ws'
-  : 'ws://localhost:5000/ws';
+// Construct WebSocket URL properly (ws:// for HTTP, wss:// for HTTPS)
+const getWebSocketURL = () => {
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  if (apiUrl.startsWith('https://')) {
+    return apiUrl.replace('https://', 'wss://') + '/ws';
+  } else {
+    return apiUrl.replace('http://', 'ws://') + '/ws';
+  }
+};
+
+const WS_URL = getWebSocketURL();
+console.log('WebSocket URL:', WS_URL);
 
 export const useScanStream = () => {
   const [connected, setConnected] = useState(false);

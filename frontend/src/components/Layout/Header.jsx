@@ -1,9 +1,11 @@
 import { LogOut, Moon, Sun, Bell, Menu, X } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { ButtonSpinner } from '../LoadingSpinner';
+import { useNotification } from '../../contexts/NotificationContext';
 
 export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = false, onMenuClick }) => {
   const { isDark, toggleTheme } = useTheme();
+  const { showNotification } = useNotification();
 
   return (
     <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
@@ -35,7 +37,19 @@ export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = fa
 
           {user && (
             <div className="flex items-center gap-3">
-              <button className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors relative">
+              <button 
+                onClick={() => {
+                  // Test notification
+                  showNotification({
+                    type: 'success',
+                    title: 'Allowed (Present)',
+                    message: 'Attendance Saved',
+                    duration: 3000,
+                  });
+                }}
+                className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors relative"
+                title="Test notification"
+              >
                 <Bell className="w-5 h-5" />
                 <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
