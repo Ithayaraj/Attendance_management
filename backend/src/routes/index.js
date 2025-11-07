@@ -12,6 +12,7 @@ import * as devicesController from '../controllers/devicesController.js';
 import * as analyticsController from '../controllers/analyticsController.js';
 import * as studentAnalyticsController from '../controllers/studentAnalyticsController.js';
 import * as batchesController from '../controllers/batchesController.js';
+import * as seedController from '../controllers/seedController.js';
 
 const router = express.Router();
 
@@ -72,5 +73,10 @@ router.get('/devices', requireAuth, requireRole(['admin']), devicesController.ge
 router.post('/devices', requireAuth, requireRole(['admin']), devicesController.createDevice);
 router.patch('/devices/:id', requireAuth, requireRole(['admin']), devicesController.updateDevice);
 router.post('/devices/:id/rotate-key', requireAuth, requireRole(['admin']), devicesController.rotateDeviceKey);
+
+// Seed endpoint - protected with secret key (optional: also require admin auth)
+// Usage: POST /api/seed?secretKey=your_secret_key
+// Or: POST /api/seed with { "secretKey": "your_secret_key" } in body
+router.post('/seed', seedController.runSeed);
 
 export default router;
