@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { config } from './config/env.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { ensureDBConnection } from './middleware/dbConnection.js';
 import routes from './routes/index.js';
 
 const app = express();
@@ -21,7 +22,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.use('/api', routes);
+// Ensure database connection before API routes
+app.use('/api', ensureDBConnection, routes);
 
 app.use(errorHandler);
 

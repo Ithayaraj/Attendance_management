@@ -5,7 +5,8 @@ const INITIAL_RETRY_DELAY = 3000; // 3 seconds
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const connectDB = async (retryCount = 0) => {
+// For serverless: simpler connection without complex retry logic
+export const connectDB = async () => {
   try {
     // Check if already connected
     if (mongoose.connection.readyState === 1) {
@@ -18,52 +19,57 @@ export const connectDB = async (retryCount = 0) => {
       throw new Error('MONGODB_URI is not defined in environment variables. Please check your .env file.');
     }
 
-    // Disconnect if in a connecting state before retrying
+    // If already connecting, wait for it
     if (mongoose.connection.readyState === 2) {
-      await mongoose.disconnect();
+      // Wait for connection with timeout
+      await Promise.race([
+        new Promise((resolve) => {
+          mongoose.connection.once('connected', resolve);
+          mongoose.connection.once('error', resolve);
+        }),
+        new Promise((resolve) => setTimeout(resolve, 5000)) // 5 second timeout
+      ]);
+      
+      if (mongoose.connection.readyState === 1) {
+        return mongoose.connection;
+      }
     }
 
+    // Connect with serverless-optimized settings
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000, // 10 seconds timeout
-      socketTimeoutMS: 45000, // 45 seconds socket timeout
+      serverSelectionTimeoutMS: 5000, // Reduced timeout for serverless
+      socketTimeoutMS: 45000,
+      // Critical: Disable buffering to prevent timeout errors
+      bufferCommands: false,
+      bufferMaxEntries: 0,
+      // Optimize for serverless
+      maxPoolSize: 1,
+      minPoolSize: 1,
+      // Auto-reconnect settings
+      autoIndex: true,
+      // Additional options for reliability
+      connectTimeoutMS: 10000,
     });
 
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
     console.log(`   Database: ${conn.connection.name}`);
     return conn;
   } catch (error) {
-    console.error(`\n❌ MongoDB Connection Error (Attempt ${retryCount + 1}/${MAX_RETRIES}):`);
+    console.error(`\n❌ MongoDB Connection Error:`);
     console.error(`   ${error.message}\n`);
     
-    // Provide helpful error messages based on error type (only on first attempt)
-    if (retryCount === 0) {
-      if (error.message.includes('IP') || error.message.includes('whitelist')) {
-        console.error('📝 To fix this issue:');
-        console.error('   1. Go to MongoDB Atlas: https://cloud.mongodb.com/');
-        console.error('   2. Navigate to Network Access (Security > Network Access)');
-        console.error('   3. Click "Add IP Address"');
-        console.error('   4. Click "Add Current IP Address" or add "0.0.0.0/0" for development');
-        console.error('   5. Wait 1-2 minutes for changes to take effect');
-        console.error('   6. The server will automatically retry the connection\n');
-      } else if (error.message.includes('authentication')) {
-        console.error('📝 Check your MongoDB username and password in MONGODB_URI');
-      } else if (error.message.includes('MONGODB_URI')) {
-        console.error('📝 Create a .env file with MONGODB_URI=your_connection_string');
-        process.exit(1); // Exit if URI is not set
-      }
+    // Provide helpful error messages
+    if (error.message.includes('IP') || error.message.includes('whitelist')) {
+      console.error('📝 Network Access Issue:');
+      console.error('   1. Go to MongoDB Atlas: https://cloud.mongodb.com/');
+      console.error('   2. Navigate to Network Access (Security > Network Access)');
+      console.error('   3. Click "Add IP Address"');
+      console.error('   4. Add "0.0.0.0/0" to allow all IPs (or add Vercel IPs)');
+      console.error('   5. Wait 1-2 minutes for changes to take effect\n');
+    } else if (error.message.includes('authentication')) {
+      console.error('📝 Authentication Issue: Check your MongoDB username and password in MONGODB_URI\n');
     }
-
-    // Retry logic with exponential backoff
-    if (retryCount < MAX_RETRIES - 1) {
-      const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
-      console.log(`⏳ Retrying connection in ${retryDelay / 1000} seconds...\n`);
-      await delay(retryDelay);
-      return connectDB(retryCount + 1);
-    } else {
-      console.error('💥 Max retry attempts reached. Server will continue to retry every 30 seconds...\n');
-      // Continue retrying indefinitely but less frequently
-      await delay(30000); // Wait 30 seconds
-      return connectDB(0); // Reset retry count for infinite retries
-    }
+    
+    throw error; // Re-throw for middleware to handle
   }
 };
