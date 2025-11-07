@@ -2,6 +2,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 
 // LCD I2C address (0x27 or 0x3F, உங்கள் module-க்கு எந்த address இருக்குனு I2C Scanner code run பண்ணி check பண்ணுங்க)
 // For ESP32 compatibility, install "LiquidCrystal I2C" by Marco Schwartz from Library Manager
@@ -15,9 +16,10 @@ HardwareSerial GM65Serial(2);
 
 // ===== Network & API Config =====
 // TODO: fill these with your actual Wi-Fi and device/API details
-const char* WIFI_SSID = "Raj-Kenu";
-const char* WIFI_PASSWORD = "prolink12345";
-const char* API_BASE = "http://192.168.1.11:5000";
+const char* WIFI_SSID = "RAJ";
+const char* WIFI_PASSWORD = "20001432002";
+const char* API_BASE = "https://attendance-management-uere.vercel.app";
+// const char* API_BASE = "https://192.168.43.214:5000";
 const char* DEVICE_KEY = "esp32-dev-key";      // auto-created on backend startup
 
 // Endpoint path
@@ -225,14 +227,32 @@ void processID(String rawData) {
     lcd.print("Attendance Saved");
     Serial.println("SERVER OK: " + label);
     buzz(60, 60, 2); // double short beep for success
-  } else {
-    // Error message
+  } else if (statusMsg.startsWith("ERR:")) {
+    // Error message - extract error text
+    String errText = statusMsg.substring(4);
+    
+    // Display error on LCD (split across two lines if needed)
     lcd.setCursor(0, 0);
-    lcd.print("Denied");
+    if (errText.length() <= 16) {
+      lcd.print("Error:");
+      lcd.setCursor(0, 1);
+      lcd.print(errText);
+    } else {
+      // Split long error messages
+      lcd.print(errText.substring(0, 16));
+      lcd.setCursor(0, 1);
+      lcd.print(errText.substring(16, 32));
+    }
+    Serial.println("SERVER ERR: " + statusMsg);
+    buzz(200, 100, 2); // error tone
+  } else {
+    // Unknown response format
+    lcd.setCursor(0, 0);
+    lcd.print("Unknown Error");
     lcd.setCursor(0, 1);
     String err = statusMsg.length() > 16 ? statusMsg.substring(0, 16) : statusMsg;
     lcd.print(err);
-    Serial.println("SERVER ERR: " + statusMsg);
+    Serial.println("SERVER UNKNOWN: " + statusMsg);
     buzz(200, 100, 2); // error tone
   }
 
@@ -270,25 +290,39 @@ void logAttendance(String studentID) {
 
 
 // === Backend POST helper ===
-// === Backend POST helper ===
 String sendScanToServer(String registrationNo) {
   if (WiFi.status() != WL_CONNECTED) {
     bool ok = ensureWiFi(15000);
-    if (!ok) return String("WiFi not connected");
+    if (!ok) return String("ERR:WiFi Failed");
   }
 
-  WiFiClient client;
+  WiFiClientSecure client;
   HTTPClient http;
+  
+  // Use HTTPS with certificate validation disabled for ESP32 (use with caution in production)
+  client.setInsecure(); // Skip certificate validation
+  
   String url = String(API_BASE) + String(SCAN_ENDPOINT);
-  http.setTimeout(8000);
+  
+  http.setTimeout(10000); // Increased timeout
+  http.setReuse(true); // Reuse connection
+  
   bool began = http.begin(client, url);
   if (!began) {
-    return String("Begin failed");
+    Serial.println("ERROR: HTTP begin failed");
+    return String("ERR:Connection Failed");
   }
+  
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-device-key", DEVICE_KEY);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // Follow redirects
 
   String body = String("{\"registrationNo\":\"") + registrationNo + String("\"}");
+
+  Serial.print("Sending to: ");
+  Serial.println(url);
+  Serial.print("Body: ");
+  Serial.println(body);
 
   int code = http.POST(body);
   String resp = http.getString();
@@ -299,7 +333,8 @@ String sendScanToServer(String registrationNo) {
   Serial.print("Response: ");
   Serial.println(resp);
 
-  if (code == 200) {
+  // Handle successful response
+  if (code == 200 || code == 201) {
     // Parse the JSON response properly
     int successPos = resp.indexOf("\"success\":true");
     if (successPos >= 0) {
@@ -325,19 +360,84 @@ String sendScanToServer(String registrationNo) {
       return String("OK:present"); // fallback
     } else {
       // success:false - extract error message
-      int msgKey = resp.indexOf("\"message\":");
-      if (msgKey >= 0) {
-        int q1 = resp.indexOf('"', msgKey + 10);
-        int q2 = resp.indexOf('"', q1 + 1);
-        if (q1 >= 0 && q2 > q1) {
-          return resp.substring(q1 + 1, q2);
-        }
+      String errorMsg = extractErrorMessage(resp);
+      if (errorMsg.length() > 0) {
+        return String("ERR:") + errorMsg;
       }
-      return String("Server error");
+      return String("ERR:Server Error");
     }
-  } else if (code > 0) {
-    return String("HTTP ") + String(code);
-  } else {
-    return String("HTTP Error ") + String(code);
+  } 
+  // Handle redirects (301, 302, 307, 308)
+  else if (code == 301 || code == 302 || code == 307 || code == 308) {
+    return String("ERR:Redirect Issue");
   }
+  // Handle client errors (4xx)
+  else if (code >= 400 && code < 500) {
+    String errorMsg = extractErrorMessage(resp);
+    if (errorMsg.length() > 0) {
+      return String("ERR:") + errorMsg;
+    }
+    if (code == 401) return String("ERR:Auth Failed");
+    if (code == 403) return String("ERR:Access Denied");
+    if (code == 404) return String("ERR:Not Found");
+    return String("ERR:Client ") + String(code);
+  }
+  // Handle server errors (5xx)
+  else if (code >= 500) {
+    return String("ERR:Server ") + String(code);
+  }
+  // Handle connection errors (ESP32 HTTPClient error codes)
+  else if (code < 0) {
+    // ESP32 HTTPClient error codes (only use constants that exist)
+    if (code == HTTPC_ERROR_CONNECTION_REFUSED) return String("ERR:Conn Refused");
+    if (code == HTTPC_ERROR_CONNECTION_LOST) return String("ERR:Conn Lost");
+    if (code == HTTPC_ERROR_READ_TIMEOUT) return String("ERR:Read Timeout");
+    if (code == HTTPC_ERROR_NO_HTTP_SERVER) return String("ERR:No Server");
+    if (code == HTTPC_ERROR_NO_STREAM) return String("ERR:No Stream");
+    if (code == HTTPC_ERROR_TOO_LESS_RAM) return String("ERR:Low RAM");
+    if (code == HTTPC_ERROR_ENCODING) return String("ERR:Encoding");
+    if (code == HTTPC_ERROR_STREAM_WRITE) return String("ERR:Stream Write");
+    // Generic timeout check (if timeout occurs)
+    if (code == -1) return String("ERR:Timeout");
+    // Generic connection failure (for codes that don't match above)
+    return String("ERR:Conn ") + String(code);
+  }
+  // Unknown error
+  else {
+    return String("ERR:Unknown ") + String(code);
+  }
+}
+
+// === Extract Error Message from JSON ===
+String extractErrorMessage(String json) {
+  // Try to find "message" field
+  int msgKey = json.indexOf("\"message\":");
+  if (msgKey >= 0) {
+    int q1 = json.indexOf('"', msgKey + 10);
+    int q2 = json.indexOf('"', q1 + 1);
+    if (q1 >= 0 && q2 > q1) {
+      String msg = json.substring(q1 + 1, q2);
+      // Limit message length for LCD (max 16 chars)
+      if (msg.length() > 16) {
+        msg = msg.substring(0, 13) + "...";
+      }
+      return msg;
+    }
+  }
+  
+  // Try to find "error" field
+  int errKey = json.indexOf("\"error\":");
+  if (errKey >= 0) {
+    int q1 = json.indexOf('"', errKey + 8);
+    int q2 = json.indexOf('"', q1 + 1);
+    if (q1 >= 0 && q2 > q1) {
+      String err = json.substring(q1 + 1, q2);
+      if (err.length() > 16) {
+        err = err.substring(0, 13) + "...";
+      }
+      return err;
+    }
+  }
+  
+  return String("");
 }

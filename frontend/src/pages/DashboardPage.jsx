@@ -1,21 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Activity, Users, Clock, UserX, TrendingUp, Trophy, AlertCircle, Plus } from 'lucide-react';
 import { LineChart as ReLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { MonthlyPie } from '../components/Charts/MonthlyPie';
 import { useMonthlyAnalytics } from '../hooks/useMonthlyAnalytics';
 import { useScanStream } from '../hooks/useScanStream';
 import { apiClient } from '../lib/apiClient';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+
+// Cache duration: 2 minutes for dashboard data
+const CACHE_DURATION = 2 * 60 * 1000;
+const cacheKey = 'dashboard_data';
 
 export const DashboardPage = () => {
   const currentMonth = new Date().toISOString().slice(0, 7);
   const { data: analytics } = useMonthlyAnalytics(currentMonth);
   const { connected, lastScan, sessionStatus } = useScanStream();
+  const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [topAttendees, setTopAttendees] = useState([]);
   const [bottomAttendees, setBottomAttendees] = useState([]);
   const [bannerScan, setBannerScan] = useState(null);
   const [courses, setCourses] = useState([]);
   const [showCreateSession, setShowCreateSession] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [loadingTop, setLoadingTop] = useState(true);
+  const [loadingCourses, setLoadingCourses] = useState(true);
+  const [loadingBatches, setLoadingBatches] = useState(true);
+  const [batchLineLoading, setBatchLineLoading] = useState(false);
   const roundToQuarter = (date) => {
     const d = new Date(date);
     const minutes = d.getMinutes();
@@ -48,23 +58,104 @@ export const DashboardPage = () => {
   const [batches, setBatches] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState('');
   const [batchLine, setBatchLine] = useState([]);
+  const hasLoadedRef = useRef(false);
 
+  // Load each section independently
   useEffect(() => {
-    loadTopAttendees();
-    loadCourses();
-    loadBatches();
+    const initialize = async () => {
+      // Check cache first
+      const cached = sessionStorage.getItem(cacheKey);
+      const now = Date.now();
+      
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          const age = now - timestamp;
+          
+          if (age < CACHE_DURATION && !hasLoadedRef.current) {
+            // Use cached data immediately
+            setTopAttendees(data.topAttendees || []);
+            setBottomAttendees(data.bottomAttendees || []);
+            setCourses(data.courses || []);
+            setBatches(data.batches || []);
+            if (data.courses?.length > 0 && !form.courseId) {
+              setForm((f) => ({ ...f, courseId: data.courses[0]._id }));
+            }
+            hasLoadedRef.current = true;
+            setLoadingDashboard(false);
+            
+            // Refresh in background if data is older than 1 minute
+            if (age > 60 * 1000) {
+              loadAllSectionsIndependently();
+            }
+            return;
+          }
+        } catch (e) {
+          console.error('Cache parse error:', e);
+        }
+      }
+
+      // Load all sections independently (not waiting for each other)
+      if (!hasLoadedRef.current) {
+        loadAllSectionsIndependently();
+      }
+    };
+
+    const loadAllSectionsIndependently = () => {
+      // Load each section independently - they don't wait for each other
+      loadTopAttendees();
+      loadCourses();
+      loadBatches();
+      loadLive();
+      loadYearWise();
+    };
+
+    initialize();
   }, []);
 
   const loadTopAttendees = async () => {
     try {
+      setLoadingTop(true);
       const [top, bottom] = await Promise.all([
         apiClient.get('/api/analytics/top-attendees?limit=3&type=top'),
         apiClient.get('/api/analytics/top-attendees?limit=3&type=bottom')
       ]);
       setTopAttendees(top.data);
       setBottomAttendees(bottom.data);
+      
+      // Update cache
+      updateCache('topAttendees', top.data, 'bottomAttendees', bottom.data);
     } catch (error) {
       console.error('Error loading attendees:', error);
+    } finally {
+      setLoadingTop(false);
+      if (!hasLoadedRef.current) {
+        hasLoadedRef.current = true;
+        setLoadingDashboard(false);
+      }
+    }
+  };
+
+  const updateCache = (key1, value1, key2, value2) => {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      const cacheData = JSON.parse(cached);
+      if (key1) cacheData[key1] = value1;
+      if (key2) cacheData[key2] = value2;
+      cacheData.timestamp = Date.now();
+      sessionStorage.setItem(cacheKey, JSON.stringify(cacheData));
+    } else {
+      // Create new cache
+      const cacheData = {
+        topAttendees: [],
+        bottomAttendees: [],
+        courses: [],
+        batches: [],
+        timestamp: Date.now()
+      };
+      if (key1) cacheData[key1] = value1;
+      if (key2) cacheData[key2] = value2;
+      sessionStorage.setItem(cacheKey, JSON.stringify(cacheData));
     }
   };
 
@@ -79,34 +170,62 @@ export const DashboardPage = () => {
 
   const loadCourses = async () => {
     try {
+      setLoadingCourses(true);
       const res = await apiClient.get('/api/courses');
-      setCourses(res.data || []);
-      if ((res.data || []).length > 0 && !form.courseId) {
-        setForm((f) => ({ ...f, courseId: res.data[0]._id }));
+      const coursesData = res.data || [];
+      setCourses(coursesData);
+      if (coursesData.length > 0 && !form.courseId) {
+        setForm((f) => ({ ...f, courseId: coursesData[0]._id }));
       }
+      
+      // Update cache
+      updateCache('courses', coursesData);
     } catch (error) {
       console.error('Error loading courses:', error);
+    } finally {
+      setLoadingCourses(false);
+      if (!hasLoadedRef.current) {
+        hasLoadedRef.current = true;
+        setLoadingDashboard(false);
+      }
     }
   };
 
   const loadBatches = async () => {
     try {
+      setLoadingBatches(true);
       const res = await apiClient.get('/api/batches');
-      setBatches(res || []);
+      const batchesData = res || [];
+      setBatches(batchesData);
+      
+      // Update cache
+      updateCache('batches', batchesData);
     } catch (e) {
       console.error('Error loading batches:', e);
+    } finally {
+      setLoadingBatches(false);
+      if (!hasLoadedRef.current) {
+        hasLoadedRef.current = true;
+        setLoadingDashboard(false);
+      }
     }
   };
 
   useEffect(() => {
     const fetchLine = async () => {
-      if (!selectedBatch) { setBatchLine([]); return; }
+      if (!selectedBatch) {
+        setBatchLine([]);
+        return;
+      }
       try {
+        setBatchLineLoading(true);
         const res = await apiClient.get(`/api/analytics/batch/line?startYear=${selectedBatch}`);
         setBatchLine(res.data?.points || []);
       } catch (e) {
         console.error('Error loading batch line:', e);
         setBatchLine([]);
+      } finally {
+        setBatchLineLoading(false);
       }
     };
     fetchLine();
@@ -145,6 +264,8 @@ export const DashboardPage = () => {
 
   const [liveStats, setLiveStats] = useState(null);
   const [yearWise, setYearWise] = useState(null);
+  const [loadingLive, setLoadingLive] = useState(true);
+  const [loadingYearWise, setLoadingYearWise] = useState(true);
 
   useEffect(() => {
     loadLive();
@@ -158,21 +279,29 @@ export const DashboardPage = () => {
 
   const loadLive = async () => {
     try {
+      setLoadingLive(true);
       const res = await apiClient.get('/api/analytics/live');
       setLiveStats(res.data);
     } catch (e) {
       console.error('Error loading live stats', e);
+    } finally {
+      setLoadingLive(false);
     }
   };
 
   const loadYearWise = async () => {
     try {
+      setLoadingYearWise(true);
       const res = await apiClient.get('/api/analytics/session/year-wise');
       setYearWise(res.data);
     } catch (e) {
       console.error('Error loading year-wise', e);
+    } finally {
+      setLoadingYearWise(false);
     }
   };
+
+  // Don't show full page loader - let individual sections load
 
   return (
     <div className="p-6 space-y-6">
@@ -224,7 +353,13 @@ export const DashboardPage = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Scans</p>
-              <p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{totalScans}</p>
+              {analytics ? (
+                <p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{totalScans}</p>
+              ) : (
+                <div className="mt-2">
+                  <LoadingSpinner size="sm" className="text-cyan-600" />
+                </div>
+              )}
             </div>
             <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
               <Activity className="w-6 h-6 text-blue-600" />
@@ -275,12 +410,24 @@ export const DashboardPage = () => {
             <TrendingUp className="w-5 h-5 text-cyan-600" />
             Monthly Attendance Distribution
           </h4>
-          <MonthlyPie data={summary} />
+          {analytics ? (
+            <MonthlyPie data={summary} />
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner size="lg" className="text-cyan-600" />
+                <span className="text-sm text-slate-500 dark:text-slate-400">Loading analytics...</span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-lg font-semibold text-slate-900 dark:text-white">Batch Trend (Last 12 months)</h4>
+            {loadingBatches ? (
+              <LoadingSpinner size="sm" className="text-cyan-600" />
+            ) : (
             <select
               value={selectedBatch}
               onChange={(e)=>setSelectedBatch(e.target.value)}
@@ -291,9 +438,24 @@ export const DashboardPage = () => {
                 <option key={b._id} value={b.startYear}>{b.name || b.startYear}</option>
               ))}
             </select>
+            )}
           </div>
-          {(!selectedBatch) ? (
+          {loadingBatches ? (
+            <div className="h-64 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner size="lg" className="text-cyan-600" />
+                <span className="text-sm text-slate-500 dark:text-slate-400">Loading batches...</span>
+              </div>
+            </div>
+          ) : (!selectedBatch) ? (
             <div className="h-64 flex items-center justify-center text-slate-500 dark:text-slate-400">Select a batch to view</div>
+          ) : batchLineLoading ? (
+            <div className="h-64 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner size="lg" className="text-cyan-600" />
+                <span className="text-sm text-slate-500 dark:text-slate-400">Loading trend data...</span>
+              </div>
+            </div>
           ) : (batchLine?.length ?? 0) === 0 ? (
             <div className="h-64 flex items-center justify-center text-slate-500 dark:text-slate-400">No data</div>
           ) : (
@@ -312,7 +474,17 @@ export const DashboardPage = () => {
           )}
         </div>
 
-        {liveStats?.session ? (
+        {loadingLive ? (
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Current Live Session</h4>
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner size="lg" className="text-cyan-600" />
+                <span className="text-sm text-slate-500 dark:text-slate-400">Loading live session...</span>
+              </div>
+            </div>
+          </div>
+        ) : liveStats?.session ? (
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Current Live Session</h4>
           {liveStats?.session ? (
@@ -337,6 +509,16 @@ export const DashboardPage = () => {
             <p className="text-slate-500 dark:text-slate-400">No live session</p>
           )}
         </div>
+        ) : loadingYearWise ? (
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Last Session Summary</h4>
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner size="lg" className="text-cyan-600" />
+                <span className="text-sm text-slate-500 dark:text-slate-400">Loading session data...</span>
+              </div>
+            </div>
+          </div>
         ) : yearWise?.session ? (
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Last Session Summary</h4>
@@ -461,6 +643,14 @@ export const DashboardPage = () => {
             <Trophy className="w-5 h-5 text-green-600" />
             Top 3 Attendees
           </h4>
+          {loadingTop ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner size="lg" className="text-cyan-600" />
+                <span className="text-sm text-slate-500 dark:text-slate-400">Loading...</span>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-3">
             {topAttendees.map((item, index) => (
               <div key={item.student.id} className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
@@ -481,6 +671,7 @@ export const DashboardPage = () => {
               <p className="text-slate-500 dark:text-slate-400 text-center py-8">No data available</p>
             )}
           </div>
+          )}
         </div>
 
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
@@ -488,6 +679,14 @@ export const DashboardPage = () => {
             <AlertCircle className="w-5 h-5 text-red-600" />
             Bottom 3 Attendees (Need Attention)
           </h4>
+          {loadingTop ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-3">
+                <LoadingSpinner size="lg" className="text-cyan-600" />
+                <span className="text-sm text-slate-500 dark:text-slate-400">Loading...</span>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-3">
             {bottomAttendees.map((item, index) => (
               <div key={item.student.id} className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
@@ -508,6 +707,7 @@ export const DashboardPage = () => {
               <p className="text-slate-500 dark:text-slate-400 text-center py-8">No data available</p>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>

@@ -26,12 +26,7 @@ cp .env.example .env
 
 3. Update `.env` with your MongoDB URI and secrets
 
-4. Seed the database:
-```bash
-npm run seed
-```
-
-5. Start the server:
+4. Start the server:
 ```bash
 npm run dev
 ```
@@ -90,7 +85,7 @@ Connect to `ws://localhost:5000/ws` to receive real-time events:
 
 ## Testing Scan Endpoint
 
-After seeding, use the provided device API key and sample barcodes:
+Use the device API key from your created device:
 
 ```bash
 curl -X POST http://localhost:5000/api/scans/ingest \
@@ -98,8 +93,3 @@ curl -X POST http://localhost:5000/api/scans/ingest \
   -H "x-device-key: YOUR_DEVICE_API_KEY" \
   -d '{"barcode":"YOUR_BARCODE","timestamp":"2025-10-05T10:00:00Z"}'
 ```
-
-## Default Users
-
-- Admin: `admin@university.edu` / `password123`
-- Instructor: `instructor@university.edu` / `password123`

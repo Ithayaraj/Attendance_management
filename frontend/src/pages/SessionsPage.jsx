@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Plus, RefreshCw, PlayCircle, XCircle, Edit, Trash2 } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 export const SessionsPage = () => {
   const [courses, setCourses] = useState([]);
@@ -11,6 +14,7 @@ export const SessionsPage = () => {
   const [creating, setCreating] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editing, setEditing] = useState(null);
+  const coursesLoadedRef = useRef(false);
   const roundToQuarter = (date) => {
     const d = new Date(date);
     const minutes = d.getMinutes();
@@ -40,11 +44,60 @@ export const SessionsPage = () => {
   });
 
   useEffect(() => {
-    loadCourses();
+    // Check cache for courses
+    const cacheKey = 'sessions_courses';
+    const cached = sessionStorage.getItem(cacheKey);
+    
+    if (cached) {
+      try {
+        const { data, timestamp } = JSON.parse(cached);
+        const age = Date.now() - timestamp;
+        
+        if (age < CACHE_DURATION) {
+          setCourses(data);
+          coursesLoadedRef.current = true;
+          
+          // Refresh in background if older than 1 minute
+          if (age > 60 * 1000) {
+            loadCourses();
+          }
+          return;
+        }
+      } catch (e) {
+        console.error('Cache error:', e);
+      }
+    }
+    
+    if (!coursesLoadedRef.current) {
+      loadCourses();
+    }
   }, []);
 
   useEffect(() => {
     if (selectedCourseId) {
+      // Check cache for sessions
+      const cacheKey = `sessions_${selectedCourseId}`;
+      const cached = sessionStorage.getItem(cacheKey);
+      
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          const age = Date.now() - timestamp;
+          
+          if (age < CACHE_DURATION) {
+            setSessions(data);
+            
+            // Refresh in background if older than 30 seconds
+            if (age > 30 * 1000) {
+              loadSessions(selectedCourseId);
+            }
+            return;
+          }
+        } catch (e) {
+          console.error('Cache error:', e);
+        }
+      }
+      
       loadSessions(selectedCourseId);
     }
   }, [selectedCourseId]);
@@ -54,6 +107,13 @@ export const SessionsPage = () => {
       const res = await apiClient.get('/api/courses');
       const list = res.data || [];
       setCourses(list);
+      coursesLoadedRef.current = true;
+      
+      // Cache courses
+      sessionStorage.setItem('sessions_courses', JSON.stringify({
+        data: list,
+        timestamp: Date.now()
+      }));
     } catch (e) {
       console.error(e);
       alert(e.message || 'Failed to load courses');
@@ -64,7 +124,14 @@ export const SessionsPage = () => {
     try {
       setLoading(true);
       const res = await apiClient.get(`/api/courses/${courseId}/sessions`);
-      setSessions(res.data || []);
+      const sessionsData = res.data || [];
+      setSessions(sessionsData);
+      
+      // Cache sessions for this course
+      sessionStorage.setItem(`sessions_${courseId}`, JSON.stringify({
+        data: sessionsData,
+        timestamp: Date.now()
+      }));
     } catch (e) {
       console.error(e);
       alert(e.message || 'Failed to load sessions');
@@ -90,6 +157,8 @@ export const SessionsPage = () => {
         await apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'live' });
       }
       setShowCreate(false);
+      // Clear cache and reload
+      sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (e) {
       alert(e.message || 'Create failed');
@@ -101,6 +170,8 @@ export const SessionsPage = () => {
   const setStatus = async (sessionId, status) => {
     try {
       await apiClient.patch(`/api/sessions/${sessionId}/status`, { status });
+      // Clear cache and reload
+      sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (e) {
       alert(e.message || 'Failed to update status');
@@ -124,6 +195,8 @@ export const SessionsPage = () => {
       });
       setShowEdit(false);
       setEditing(null);
+      // Clear cache and reload
+      sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (err) {
       alert(err.message || 'Update failed');
@@ -134,6 +207,8 @@ export const SessionsPage = () => {
     if (!confirm('Delete this session?')) return;
     try {
       await apiClient.delete(`/api/sessions/${s._id}`);
+      // Clear cache and reload
+      sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (err) {
       alert(err.message || 'Delete failed');
@@ -186,7 +261,14 @@ export const SessionsPage = () => {
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {loading ? (
-                  <tr><td colSpan="5" className="px-6 py-12 text-center text-slate-500">Loading...</td></tr>
+                  <tr>
+                    <td colSpan="5" className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <LoadingSpinner size="lg" className="text-cyan-600" />
+                        <span className="text-slate-500 dark:text-slate-400">Loading sessions...</span>
+                      </div>
+                    </td>
+                  </tr>
                 ) : sessions.length === 0 ? (
                   <tr><td colSpan="5" className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
                 ) : (

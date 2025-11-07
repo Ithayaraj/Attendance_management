@@ -49,6 +49,15 @@ export const ingestScan = async (req, res, next) => {
       }
     });
   } catch (error) {
+    // Broadcast error via WebSocket so frontend can show notification
+    broadcast({
+      type: 'scan.error',
+      payload: {
+        registrationNo: req.body?.registrationNo || 'Unknown',
+        error: error.message || 'Scan failed',
+        timestamp: new Date().toISOString()
+      }
+    });
     next(error);
   }
 };

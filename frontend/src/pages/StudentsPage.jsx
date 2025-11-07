@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, Eye, Edit, Trash2, Download } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
+import { LoadingSpinner } from '../components/LoadingSpinner';
 
 export const StudentsPage = ({ onViewStudent }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -9,6 +10,7 @@ export const StudentsPage = ({ onViewStudent }) => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [batches, setBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
 
   const [formData, setFormData] = useState({
     registrationNo: '',
@@ -56,13 +58,55 @@ export const StudentsPage = ({ onViewStudent }) => {
     return facultyStructure[selectedFaculty].departments;
   }, [selectedFaculty]);
 
+  const BATCHES_CACHE_KEY = 'students_batches_cache';
+  const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
   useEffect(() => {
     const load = async () => {
-      try {
-        const b = await apiClient.get('/api/batches').catch(()=>[]);
-        setBatches(b || []);
-      } catch {}
+      // Check cache first
+      const cached = sessionStorage.getItem(BATCHES_CACHE_KEY);
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          const age = Date.now() - timestamp;
+          
+          if (age < BATCHES_CACHE_DURATION) {
+            setBatches(data || []);
+            setLoadingBatches(false);
+            
+            // Refresh in background if data is older than 1 minute
+            if (age > 60 * 1000) {
+              loadFresh();
+            }
+            return;
+          }
+        } catch (e) {
+          console.error('Cache parse error:', e);
+        }
+      }
+
+      await loadFresh();
     };
+
+    const loadFresh = async () => {
+      try {
+        setLoadingBatches(true);
+        const b = await apiClient.get('/api/batches').catch(()=>[]);
+        const batchesData = b || [];
+        setBatches(batchesData);
+        
+        // Cache the data
+        sessionStorage.setItem(BATCHES_CACHE_KEY, JSON.stringify({
+          data: batchesData,
+          timestamp: Date.now()
+        }));
+      } catch {
+        setBatches([]);
+      } finally {
+        setLoadingBatches(false);
+      }
+    };
+
     load();
   }, []);
 
@@ -80,6 +124,8 @@ export const StudentsPage = ({ onViewStudent }) => {
     return `${selectedBatchYear}/${deptCode}/`;
   }, [selectedBatchYear, deptCode]);
 
+  const STUDENTS_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
   // Fetch students from database when filters are selected
   useEffect(() => {
     const loadStudents = async () => {
@@ -88,6 +134,37 @@ export const StudentsPage = ({ onViewStudent }) => {
         return;
       }
 
+      // Create cache key based on filters (but not search term for main cache)
+      const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}`;
+      
+      // Check cache first (only if no search term)
+      if (!searchTerm.trim()) {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const { data, timestamp } = JSON.parse(cached);
+            const age = Date.now() - timestamp;
+            
+            if (age < STUDENTS_CACHE_DURATION) {
+              setStudents(data || []);
+              setLoading(false);
+              
+              // Refresh in background if data is older than 30 seconds
+              if (age > 30 * 1000) {
+                loadFresh();
+              }
+              return;
+            }
+          } catch (e) {
+            console.error('Cache parse error:', e);
+          }
+        }
+      }
+
+      await loadFresh();
+    };
+
+    const loadFresh = async () => {
       try {
         setLoading(true);
         const params = new URLSearchParams({
@@ -102,18 +179,20 @@ export const StudentsPage = ({ onViewStudent }) => {
         }
 
         const url = `/api/students?${params.toString()}`;
-        console.log('Fetching students from:', url);
-        console.log('Filter params:', { regPrefix, department: selectedDepartment, searchTerm });
-        
         const res = await apiClient.get(url);
-        console.log('API Response:', res);
-        
         const studentsList = res?.data?.students || [];
-        console.log(`Received ${studentsList.length} students`);
         setStudents(studentsList);
+        
+        // Cache the data (only if no search term)
+        if (!searchTerm.trim()) {
+          const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}`;
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            data: studentsList,
+            timestamp: Date.now()
+          }));
+        }
       } catch (error) {
         console.error('Error loading students:', error);
-        console.error('Error details:', error.response?.data || error.message);
         setStudents([]);
       } finally {
         setLoading(false);
@@ -146,6 +225,15 @@ export const StudentsPage = ({ onViewStudent }) => {
       const res = await apiClient.get(url);
       const studentsList = res?.data?.students || [];
       setStudents(studentsList);
+      
+      // Update cache (only if no search term)
+      if (!searchTerm.trim()) {
+        const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}`;
+        sessionStorage.setItem(cacheKey, JSON.stringify({
+          data: studentsList,
+          timestamp: Date.now()
+        }));
+      }
     } catch (error) {
       console.error('Error reloading students:', error);
       setStudents([]);
@@ -187,6 +275,9 @@ export const StudentsPage = ({ onViewStudent }) => {
         address: ''
       });
       setRegSuffix('');
+      // Clear cache and reload
+      const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}`;
+      sessionStorage.removeItem(cacheKey);
       await reloadStudents();
     } catch (error) {
       alert('Error: ' + error.message);
@@ -213,6 +304,9 @@ export const StudentsPage = ({ onViewStudent }) => {
     if (confirm('Are you sure you want to delete this student?')) {
       try {
         await apiClient.delete(`/api/students/${id}`);
+        // Clear cache and reload
+        const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}`;
+        sessionStorage.removeItem(cacheKey);
         await reloadStudents();
       } catch (error) {
         alert('Error: ' + error.message);
@@ -258,16 +352,24 @@ export const StudentsPage = ({ onViewStudent }) => {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Batch:</label>
-            <select
-              value={selectedBatchYear}
-              onChange={(e)=>setSelectedBatchYear(e.target.value)}
-              className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm"
-            >
-              <option value="">Select Batch</option>
-              {batches.map((b) => (
-                <option key={b._id} value={String(b.startYear)}>{b.name || b.startYear}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedBatchYear}
+                onChange={(e)=>setSelectedBatchYear(e.target.value)}
+                disabled={loadingBatches}
+                className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed pr-8"
+              >
+                <option value="">{loadingBatches ? 'Loading batches...' : 'Select Batch'}</option>
+                {batches.map((b) => (
+                  <option key={b._id} value={String(b.startYear)}>{b.name || b.startYear}</option>
+                ))}
+              </select>
+              {(loadingBatches || (loading && selectedBatchYear)) && (
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <LoadingSpinner size="sm" className="text-cyan-600" />
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Faculty:</label>
@@ -350,8 +452,11 @@ export const StudentsPage = ({ onViewStudent }) => {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
-                    Loading students...
+                  <td colSpan="6" className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <LoadingSpinner size="lg" className="text-cyan-600" />
+                      <span className="text-slate-500 dark:text-slate-400">Loading students...</span>
+                    </div>
                   </td>
                 </tr>
               ) : !selectedBatchYear || !selectedFaculty || !selectedDepartment ? (

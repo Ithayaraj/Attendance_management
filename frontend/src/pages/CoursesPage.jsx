@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Plus, Trash2, Edit } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { useAuth } from '../hooks/useAuth';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_KEY = 'courses_data';
 
 export const CoursesPage = () => {
   const { user } = useAuth();
@@ -11,8 +15,37 @@ export const CoursesPage = () => {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ code: '', name: '', department: '', credits: 3 });
   const [filterYear, setFilterYear] = useState(''); // '' means All
+  const hasLoadedRef = useRef(false);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // Check cache first
+    const cached = sessionStorage.getItem(CACHE_KEY);
+    if (cached) {
+      try {
+        const { data, timestamp } = JSON.parse(cached);
+        const age = Date.now() - timestamp;
+        
+        if (age < CACHE_DURATION) {
+          setCourses(data);
+          setLoading(false);
+          hasLoadedRef.current = true;
+          
+          // Refresh in background if older than 2 minutes
+          if (age > 2 * 60 * 1000) {
+            load();
+          }
+          return;
+        }
+      } catch (e) {
+        console.error('Cache error:', e);
+      }
+    }
+    
+    // Load fresh data
+    if (!hasLoadedRef.current) {
+      load();
+    }
+  }, []);
 
   const getYearSemesterFromCode = (code) => {
     if (!code || typeof code !== 'string') return null;
@@ -31,7 +64,15 @@ export const CoursesPage = () => {
     try {
       setLoading(true);
       const res = await apiClient.get('/api/courses');
-      setCourses(res.data || []);
+      const coursesData = res.data || [];
+      setCourses(coursesData);
+      hasLoadedRef.current = true;
+      
+      // Cache the data
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+        data: coursesData,
+        timestamp: Date.now()
+      }));
     } catch (e) {
       console.error(e);
       alert(e.message || 'Failed to load courses');
@@ -67,6 +108,9 @@ export const CoursesPage = () => {
         await apiClient.post('/api/courses', payload);
       }
       setShowModal(false);
+      // Clear cache and reload
+      sessionStorage.removeItem(CACHE_KEY);
+      hasLoadedRef.current = false;
       await load();
     } catch (e) {
       alert(e.message || 'Save failed');
@@ -77,6 +121,9 @@ export const CoursesPage = () => {
     if (!confirm('Delete this course?')) return;
     try {
       await apiClient.delete(`/api/courses/${id}`);
+      // Clear cache and reload
+      sessionStorage.removeItem(CACHE_KEY);
+      hasLoadedRef.current = false;
       await load();
     } catch (e) {
       alert(e.message || 'Delete failed');
@@ -126,7 +173,14 @@ export const CoursesPage = () => {
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
-                <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">Loading...</td></tr>
+                <tr>
+                  <td colSpan="7" className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <LoadingSpinner size="lg" className="text-cyan-600" />
+                      <span className="text-slate-500 dark:text-slate-400">Loading courses...</span>
+                    </div>
+                  </td>
+                </tr>
               ) : courses.length === 0 ? (
                 <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">No courses</td></tr>
               ) : (

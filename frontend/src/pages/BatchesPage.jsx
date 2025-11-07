@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Plus, Trash2, Edit } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
+import { LoadingSpinner } from '../components/LoadingSpinner';
+
+const CACHE_KEY = 'batches_cache';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 export const BatchesPage = () => {
   const [batches, setBatches] = useState([]);
@@ -10,12 +14,46 @@ export const BatchesPage = () => {
   const [editing, setEditing] = useState(null);
   const [editYear, setEditYear] = useState('');
   const [editName, setEditName] = useState('');
+  const hasLoadedRef = useRef(false);
 
-  const load = async () => {
+  const load = async (useCache = true) => {
+    // Check cache first
+    if (useCache && !hasLoadedRef.current) {
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          const age = Date.now() - timestamp;
+          
+          if (age < CACHE_DURATION) {
+            setBatches(data || []);
+            hasLoadedRef.current = true;
+            setLoading(false);
+            
+            // Refresh in background if data is older than 1 minute
+            if (age > 60 * 1000) {
+              load(false);
+            }
+            return;
+          }
+        } catch (e) {
+          console.error('Cache parse error:', e);
+        }
+      }
+    }
+
     try {
       setLoading(true);
       const res = await apiClient.get('/api/batches');
-      setBatches(res || []);
+      const batchesData = res || [];
+      setBatches(batchesData);
+      
+      // Cache the data
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+        data: batchesData,
+        timestamp: Date.now()
+      }));
+      hasLoadedRef.current = true;
     } catch (e) {
       alert(e.message || 'Failed to load batches');
     } finally {
@@ -32,7 +70,8 @@ export const BatchesPage = () => {
       await apiClient.post('/api/batches', { startYear: Number(year), name: name || undefined });
       alert('Batch created successfully');
       setYear(''); setName('');
-      await load();
+      sessionStorage.removeItem(CACHE_KEY); // Clear cache
+      await load(false);
     } catch (e) {
       alert(e.message || 'Create failed');
     }
@@ -42,7 +81,8 @@ export const BatchesPage = () => {
     if (!confirm('Delete this batch?')) return;
     try {
       await apiClient.delete(`/api/batches/${id}`);
-      await load();
+      sessionStorage.removeItem(CACHE_KEY); // Clear cache
+      await load(false);
     } catch (e) {
       alert(e.message || 'Delete failed');
     }
@@ -62,7 +102,8 @@ export const BatchesPage = () => {
       setEditing(null);
       setEditYear('');
       setEditName('');
-      await load();
+      sessionStorage.removeItem(CACHE_KEY); // Clear cache
+      await load(false);
     } catch (e) {
       alert(e.message || 'Update failed');
     }
@@ -103,7 +144,14 @@ export const BatchesPage = () => {
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
-                <tr><td colSpan="3" className="px-6 py-12 text-center text-slate-500">Loading...</td></tr>
+                <tr>
+                  <td colSpan="3" className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <LoadingSpinner size="lg" className="text-cyan-600" />
+                      <span className="text-slate-500 dark:text-slate-400">Loading batches...</span>
+                    </div>
+                  </td>
+                </tr>
               ) : batches.length === 0 ? (
                 <tr><td colSpan="3" className="px-6 py-12 text-center text-slate-500">No batches</td></tr>
               ) : (

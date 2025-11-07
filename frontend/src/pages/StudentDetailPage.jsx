@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, CheckCircle, Clock, XCircle, TrendingUp, Award } from 'lucide-react';
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { apiClient } from '../lib/apiClient';
+import { LoadingSpinner } from '../components/LoadingSpinner';
 
 const COLORS = {
   Present: '#10b981',
   Late: '#f59e0b',
   Absent: '#ef4444',
 };
+
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 export const StudentDetailPage = ({ student, onBack }) => {
   const [monthlyData, setMonthlyData] = useState(null);
@@ -19,9 +22,64 @@ export const StudentDetailPage = ({ student, onBack }) => {
 
   useEffect(() => {
     loadData();
-  }, [student]);
+  }, [student, currentMonth]);
 
   const loadData = async () => {
+    const monthlyCacheKey = `student_monthly_${student._id}_${currentMonth}`;
+    const semesterCacheKey = `student_semester_${student._id}`;
+
+    // Check cache first
+    const cachedMonthly = sessionStorage.getItem(monthlyCacheKey);
+    const cachedSemester = sessionStorage.getItem(semesterCacheKey);
+    
+    let useCachedMonthly = false;
+    let useCachedSemester = false;
+
+    if (cachedMonthly) {
+      try {
+        const { data, timestamp } = JSON.parse(cachedMonthly);
+        const age = Date.now() - timestamp;
+        if (age < CACHE_DURATION) {
+          setMonthlyData(data);
+          useCachedMonthly = true;
+        }
+      } catch (e) {
+        console.error('Cache parse error:', e);
+      }
+    }
+
+    if (cachedSemester) {
+      try {
+        const { data, timestamp } = JSON.parse(cachedSemester);
+        const age = Date.now() - timestamp;
+        if (age < CACHE_DURATION) {
+          setSemesterData(data);
+          useCachedSemester = true;
+        }
+      } catch (e) {
+        console.error('Cache parse error:', e);
+      }
+    }
+
+    // If both are cached, we're done
+    if (useCachedMonthly && useCachedSemester) {
+      setLoading(false);
+      // Refresh in background if data is older than 30 seconds
+      const cachedMonthlyData = JSON.parse(cachedMonthly);
+      const cachedSemesterData = JSON.parse(cachedSemester);
+      const monthlyAge = Date.now() - cachedMonthlyData.timestamp;
+      const semesterAge = Date.now() - cachedSemesterData.timestamp;
+      
+      if (monthlyAge > 30 * 1000 || semesterAge > 30 * 1000) {
+        loadFresh();
+      }
+      return;
+    }
+
+    await loadFresh();
+  };
+
+  const loadFresh = async () => {
     try {
       setLoading(true);
       const [monthly, semester] = await Promise.all([
@@ -30,6 +88,20 @@ export const StudentDetailPage = ({ student, onBack }) => {
       ]);
       setMonthlyData(monthly.data);
       setSemesterData(semester.data);
+      
+      // Cache the data
+      const monthlyCacheKey = `student_monthly_${student._id}_${currentMonth}`;
+      const semesterCacheKey = `student_semester_${student._id}`;
+      
+      sessionStorage.setItem(monthlyCacheKey, JSON.stringify({
+        data: monthly.data,
+        timestamp: Date.now()
+      }));
+      
+      sessionStorage.setItem(semesterCacheKey, JSON.stringify({
+        data: semester.data,
+        timestamp: Date.now()
+      }));
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -40,7 +112,10 @@ export const StudentDetailPage = ({ student, onBack }) => {
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center h-96">
-        <div className="text-slate-600 dark:text-slate-400">Loading student details...</div>
+        <div className="flex flex-col items-center gap-3">
+          <LoadingSpinner size="lg" className="text-cyan-600" />
+          <span className="text-slate-600 dark:text-slate-400">Loading student details...</span>
+        </div>
       </div>
     );
   }

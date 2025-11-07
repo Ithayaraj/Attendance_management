@@ -30,6 +30,10 @@ export const useScanStream = () => {
             if (data.type === 'scan.ingested' || data.type === 'scan.duplicate') {
               setLastScan({ ...data.payload, type: data.type });
               setEvents((prev) => [data, ...prev].slice(0, 50));
+            } else if (data.type === 'scan.error') {
+              // Handle scan errors for notifications
+              setLastScan({ ...data.payload, type: data.type });
+              setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'attendance.updated') {
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'session.status') {

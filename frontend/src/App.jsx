@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { NotificationProvider, useNotification } from './contexts/NotificationContext';
+import { NotificationContainer } from './components/Notification';
 import { useAuth } from './hooks/useAuth';
+import { useScanStream } from './hooks/useScanStream';
 import { Sidebar } from './components/Layout/Sidebar';
 import { Header } from './components/Layout/Header';
 import { DashboardPage } from './pages/DashboardPage';
@@ -10,14 +13,56 @@ import { StudentsPage } from './pages/StudentsPage';
 import { BatchesPage } from './pages/BatchesPage';
 import { StudentDetailPage } from './pages/StudentDetailPage';
 import { Activity } from 'lucide-react';
+import { PageLoader, ButtonSpinner } from './components/LoadingSpinner';
 
 function AppContent() {
-  const { user, loading, login, logout } = useAuth();
+  const { user, loading, login, logout, loginLoading, logoutLoading } = useAuth();
+  const { lastScan } = useScanStream();
+  const { showNotification, notifications, removeNotification } = useNotification();
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // Show notification when scan is received (matching Arduino LCD display exactly)
+  useEffect(() => {
+    if (lastScan && user) {
+      const scanType = lastScan.type;
+      
+      if (scanType === 'scan.error') {
+        // Match Arduino error display: "Error:" on line 1, error message on line 2
+        const errorMsg = lastScan.error || 'Unknown error';
+        showNotification({
+          type: 'error',
+          title: 'Error:',
+          message: errorMsg.length > 16 ? errorMsg.substring(0, 13) + '...' : errorMsg,
+          duration: 6000,
+        });
+      } else if (scanType === 'scan.duplicate') {
+        // Match Arduino: "Already Entered" on line 1, "status (dup)" on line 2
+        const status = lastScan.status || 'present';
+        const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+        showNotification({
+          type: 'warning',
+          title: 'Already Entered',
+          message: `${statusLabel} (dup)`,
+          duration: 4000,
+        });
+      } else if (scanType === 'scan.ingested') {
+        // Match Arduino: "Allowed (status)" on line 1, "Attendance Saved" on line 2
+        const status = lastScan.status || 'present';
+        const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+        showNotification({
+          type: 'success',
+          title: `Allowed (${statusLabel})`,
+          message: 'Attendance Saved',
+          duration: 5000,
+        });
+      }
+    }
+  }, [lastScan, user, showNotification]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -29,11 +74,7 @@ function AppContent() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
-        <div className="text-slate-600 dark:text-slate-400">Loading...</div>
-      </div>
-    );
+    return <PageLoader message="Loading application..." />;
   }
 
   if (!user) {
@@ -60,7 +101,7 @@ function AppContent() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-900 dark:text-white transition-all"
-                placeholder="admin@university.edu"
+                placeholder="Enter your email"
                 required
               />
             </div>
@@ -87,17 +128,14 @@ function AppContent() {
 
             <button
               type="submit"
-              className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3 px-4 rounded-lg hover:shadow-xl transition-all font-semibold text-lg"
+              disabled={loginLoading}
+              className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3 px-4 rounded-lg hover:shadow-xl transition-all font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Sign In
+              {loginLoading && <ButtonSpinner className="text-white" />}
+              {loginLoading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 text-center">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Demo: admin@university.edu / password123
-            </p>
-          </div>
         </div>
       </div>
     );
@@ -117,16 +155,42 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
-      <Sidebar currentPage={currentPage} onNavigate={(page) => {
-        setCurrentPage(page);
-        setSelectedStudent(null);
-      }} />
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900">
+      {/* Notification Container */}
+      <NotificationContainer 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
+      
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header user={user} onLogout={logout} title={getPageTitle()} />
+      <Sidebar 
+        currentPage={currentPage} 
+        onNavigate={(page) => {
+          setCurrentPage(page);
+          setSelectedStudent(null);
+          setSidebarOpen(false); // Close sidebar on mobile after navigation
+        }}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
-        <main className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="flex-1 flex flex-col overflow-hidden md:ml-64">
+        <Header 
+          user={user} 
+          onLogout={logout} 
+          title={getPageTitle()} 
+          logoutLoading={logoutLoading}
+          onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+        />
+
+        <main className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6">
           {selectedStudent ? (
             <StudentDetailPage
               student={selectedStudent}
@@ -143,7 +207,7 @@ function AppContent() {
           ) : currentPage === 'batches' ? (
             <BatchesPage />
           ) : (
-            <div className="p-6 text-center text-slate-600 dark:text-slate-400">
+            <div className="py-10 text-center text-slate-600 dark:text-slate-400">
               {currentPage.charAt(0).toUpperCase() + currentPage.slice(1)} page - Coming soon
             </div>
           )}
@@ -156,7 +220,9 @@ function AppContent() {
 function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <NotificationProvider>
+        <AppContent />
+      </NotificationProvider>
     </ThemeProvider>
   );
 }

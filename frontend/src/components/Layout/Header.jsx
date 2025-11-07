@@ -1,23 +1,36 @@
-import { LogOut, Moon, Sun, Bell } from 'lucide-react';
+import { LogOut, Moon, Sun, Bell, Menu, X } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { ButtonSpinner } from '../LoadingSpinner';
 
-export const Header = ({ user, onLogout, title = 'Dashboard' }) => {
+export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = false, onMenuClick }) => {
   const { isDark, toggleTheme } = useTheme();
 
   return (
     <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
-      <div className="px-6 py-4">
+      <div className="px-4 sm:px-6 py-4">
         <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{title}</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-              {new Date().toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </p>
+          <div className="flex items-center gap-3">
+            {/* Hamburger button for mobile */}
+            {onMenuClick && (
+              <button
+                onClick={onMenuClick}
+                className="md:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                aria-label="Toggle menu"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+            )}
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{title}</h2>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </p>
+            </div>
           </div>
 
           {user && (
@@ -53,10 +66,15 @@ export const Header = ({ user, onLogout, title = 'Dashboard' }) => {
 
               <button
                 onClick={onLogout}
-                className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                disabled={logoutLoading}
+                className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                 title="Logout"
               >
-                <LogOut className="w-5 h-5" />
+                {logoutLoading ? (
+                  <ButtonSpinner className="text-slate-600 dark:text-slate-300" />
+                ) : (
+                  <LogOut className="w-5 h-5" />
+                )}
               </button>
             </div>
           )}

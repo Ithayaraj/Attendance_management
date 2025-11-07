@@ -4,6 +4,8 @@ import { apiClient } from '../lib/apiClient';
 export const useAuth = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -18,6 +20,7 @@ export const useAuth = () => {
 
   const login = async (email, password) => {
     try {
+      setLoginLoading(true);
       const response = await apiClient.post('/api/auth/login', { email, password });
 
       localStorage.setItem('token', response.data.token);
@@ -29,6 +32,8 @@ export const useAuth = () => {
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -36,17 +41,19 @@ export const useAuth = () => {
     const refreshToken = localStorage.getItem('refreshToken');
 
     try {
+      setLogoutLoading(true);
       if (refreshToken) {
         await apiClient.post('/api/auth/logout', { refreshToken });
       }
     } catch (error) {
       console.error('Logout error:', error);
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
+      setUser(null);
+      setLogoutLoading(false);
     }
-
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-    setUser(null);
   };
 
   const refreshToken = async () => {
@@ -70,5 +77,5 @@ export const useAuth = () => {
     }
   };
 
-  return { user, loading, login, logout, refreshToken };
+  return { user, loading, login, logout, refreshToken, loginLoading, logoutLoading };
 };
