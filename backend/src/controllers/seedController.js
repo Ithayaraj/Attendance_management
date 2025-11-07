@@ -86,6 +86,8 @@ export const runSeed = async (req, res) => {
     });
 
     console.log('Created users');
+    console.log('Admin: admin@university.edu / password123');
+    console.log('Instructor: instructor@university.edu / password123');
 
     const deviceApiKey = crypto.randomBytes(32).toString('hex');
     const device = await Device.create({
@@ -96,7 +98,7 @@ export const runSeed = async (req, res) => {
       lastSeenAt: new Date()
     });
 
-    console.log('Created device');
+    console.log('\nDevice API Key:', deviceApiKey);
 
     const courses = await Course.insertMany([
       {
@@ -129,7 +131,7 @@ export const runSeed = async (req, res) => {
 
     for (let i = 1; i <= 80; i++) {
       const year = Math.floor(Math.random() * 4) + 1;
-      const semester = Math.floor(Math.random() * 8) + 1;
+      const semester = Math.floor(Math.random() * 2) + 1;
       const student = {
         registrationNo: `UOV/2025/${String(i).padStart(4, '0')}`,
         name: `Student ${i}`,
@@ -149,6 +151,10 @@ export const runSeed = async (req, res) => {
 
     const createdStudents = await Student.insertMany(students);
     console.log('Created 80 students');
+    console.log('\nSample students:');
+    sampleRegistrations.forEach(s => {
+      console.log(`${s.registrationNo}: ${s.name}`);
+    });
 
     const enrollments = [];
     for (const course of courses) {
