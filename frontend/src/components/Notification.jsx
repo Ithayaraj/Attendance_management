@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, CheckCircle, AlertCircle, Info, XCircle } from 'lucide-react';
 
 export const Notification = ({ notification, onClose }) => {
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(true); // Start visible immediately
 
   useEffect(() => {
-    // Show immediately
+    console.log('=== Notification useEffect triggered ===');
+    console.log('Notification ID:', notification.id);
+    console.log('Notification data:', notification);
+    // Ensure it's visible immediately
     setIsVisible(true);
+    console.log('Notification visibility set to true');
     
     // Auto-close after duration
     const timer = setTimeout(() => {
+      console.log('Auto-closing notification:', notification.id);
       setIsVisible(false);
-      setTimeout(() => onClose(), 300); // Wait for fade out
+      setTimeout(() => {
+        console.log('Calling onClose for notification:', notification.id);
+        onClose();
+      }, 300); // Wait for fade out
     }, notification.duration || 5000);
 
     return () => {
@@ -45,31 +54,58 @@ export const Notification = ({ notification, onClose }) => {
     }
   };
 
+  console.log('=== Notification Component Render ===');
+  console.log('isVisible:', isVisible);
+  console.log('notification ID:', notification.id);
+  console.log('notification title:', notification.title);
+  console.log('notification message:', notification.message);
+  console.log('notification type:', notification.type);
+  
+  if (!isVisible) {
+    console.log('Notification is not visible, returning null');
+    return null;
+  }
+  
   return (
     <div
-      className="min-w-[320px] max-w-md"
+      className="min-w-[320px] max-w-sm w-full"
       style={{ 
-        transform: isVisible ? 'translateX(0)' : 'translateX(calc(100% + 1rem))',
-        opacity: isVisible ? 1 : 0,
+        transform: 'translateX(0)',
+        opacity: 1,
         transition: 'all 0.3s ease-in-out',
-        willChange: 'transform, opacity'
+        willChange: 'transform, opacity',
+        pointerEvents: 'auto',
+        display: 'block',
+        visibility: 'visible',
+        position: 'relative',
+        zIndex: 100000,
+        backgroundColor: 'transparent',
       }}
     >
       <div
-        className={`${getBgColor()} rounded-lg shadow-lg border p-4 flex items-start gap-3`}
+        className={`${getBgColor()} rounded-lg shadow-xl border-2 p-4 flex items-start gap-3`}
+        style={{
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+        }}
       >
         <div className="flex-shrink-0 mt-0.5">
           {getIcon()}
         </div>
         <div className="flex-1 min-w-0">
           {notification.title && (
-            <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white mb-2">
               {notification.title}
             </p>
           )}
-          <p className="text-sm text-slate-700 dark:text-slate-300">
-            {notification.message}
-          </p>
+          {typeof notification.message === 'string' ? (
+            <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed">
+              {notification.message}
+            </div>
+          ) : (
+            <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+              {notification.message}
+            </div>
+          )}
         </div>
         <button
           onClick={() => {
@@ -86,35 +122,58 @@ export const Notification = ({ notification, onClose }) => {
 };
 
 export const NotificationContainer = ({ notifications, onRemove }) => {
-  console.log('NotificationContainer render - notifications count:', notifications.length, notifications);
+  console.log('=== NotificationContainer render ===');
+  console.log('Notifications count:', notifications.length);
+  console.log('Notifications array:', JSON.stringify(notifications, null, 2));
+  console.log('onRemove function:', typeof onRemove);
   
   if (notifications.length === 0) {
+    console.log('No notifications to display - returning null');
     return null;
   }
   
-  return (
+  console.log('Rendering', notifications.length, 'notifications');
+  
+  const containerContent = (
     <div 
-      className="fixed top-4 right-4 z-[9999] space-y-2 pointer-events-none"
+      className="fixed top-4 right-4 space-y-2 pointer-events-none"
       style={{ 
-        maxWidth: '400px',
-        width: 'calc(100% - 2rem)',
+        maxWidth: '420px',
+        width: 'calc(100vw - 2rem)',
+        position: 'fixed',
+        top: '1rem',
+        right: '1rem',
+        zIndex: 99999,
+        pointerEvents: 'none',
+        backgroundColor: 'transparent',
       }}
     >
-      {notifications.map((notification, index) => (
-        <div 
-          key={notification.id} 
-          className="pointer-events-auto mb-2"
-        >
-          <Notification
-            notification={notification}
-            onClose={() => {
-              console.log('Removing notification:', notification.id);
-              onRemove(notification.id);
+      {notifications.map((notification, index) => {
+        console.log(`Rendering notification ${index + 1}/${notifications.length}:`, notification);
+        return (
+          <div 
+            key={notification.id} 
+            className="pointer-events-auto mb-2"
+            style={{
+              pointerEvents: 'auto',
             }}
-          />
-        </div>
-      ))}
+          >
+            <Notification
+              notification={notification}
+              onClose={() => {
+                console.log('Removing notification:', notification.id);
+                onRemove(notification.id);
+              }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
+  
+  // Use portal to render at document body level to avoid any parent container issues
+  return typeof document !== 'undefined' 
+    ? createPortal(containerContent, document.body)
+    : containerContent;
 };
 

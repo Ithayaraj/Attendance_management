@@ -22,33 +22,47 @@ export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = fa
                 <Menu className="w-6 h-6" />
               </button>
             )}
-            <div>
+          <div>
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{title}</h2>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
-                {new Date().toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
-              </p>
+              {new Date().toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </p>
             </div>
           </div>
 
           {user && (
             <div className="flex items-center gap-3">
               <button 
-                onClick={() => {
-                  // Test notification
-                  showNotification({
-                    type: 'success',
-                    title: 'Allowed (Present)',
-                    message: 'Attendance Saved',
-                    duration: 3000,
-                  });
+                onClick={async () => {
+                  // Test WebSocket broadcast from backend
+                  try {
+                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+                    const response = await fetch(`${apiUrl}/api/scans/test-broadcast`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                    });
+                    const data = await response.json();
+                    console.log('Test broadcast response:', data);
+                  } catch (error) {
+                    console.error('Test broadcast error:', error);
+                    // Fallback: show test notification directly
+                    showNotification({
+                      type: 'success',
+                      title: 'Attendance Recorded (Present)',
+                      message: 'John Doe\n2021/ICTS/001 • TICT4214\nCheck-in: 11:24 PM',
+                      duration: 6000,
+                    });
+                  }
                 }}
                 className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors relative"
-                title="Test notification"
+                title="Test WebSocket broadcast"
               >
                 <Bell className="w-5 h-5" />
                 <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
@@ -88,7 +102,7 @@ export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = fa
                 {logoutLoading ? (
                   <ButtonSpinner className="text-slate-600 dark:text-slate-300" />
                 ) : (
-                  <LogOut className="w-5 h-5" />
+                <LogOut className="w-5 h-5" />
                 )}
               </button>
             </div>

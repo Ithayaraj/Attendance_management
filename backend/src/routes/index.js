@@ -12,6 +12,7 @@ import * as devicesController from '../controllers/devicesController.js';
 import * as analyticsController from '../controllers/analyticsController.js';
 import * as studentAnalyticsController from '../controllers/studentAnalyticsController.js';
 import * as batchesController from '../controllers/batchesController.js';
+import { broadcast } from '../realtime/ws.js';
 
 const router = express.Router();
 
@@ -49,6 +50,25 @@ router.put('/sessions/:sessionId', requireAuth, requireRole(['admin', 'instructo
 router.delete('/sessions/:sessionId', requireAuth, requireRole(['admin', 'instructor']), sessionsController.deleteSession);
 
 router.post('/scans/ingest', scanLimiter, scansController.ingestScan);
+
+// Test endpoint to verify WebSocket broadcast (for debugging)
+router.post('/scans/test-broadcast', (req, res) => {
+  const testData = {
+    type: 'scan.ingested',
+    payload: {
+      studentId: 'test-id',
+      studentName: 'Test Student',
+      registrationNo: 'TEST001',
+      sessionId: 'test-session',
+      courseCode: 'TEST101',
+      status: 'present',
+      checkInAt: new Date().toISOString()
+    }
+  };
+  console.log('=== Test broadcast triggered ===');
+  broadcast(testData);
+  res.json({ success: true, message: 'Test broadcast sent' });
+});
 
 router.get('/sessions/:sessionId/attendance', requireAuth, attendanceController.getAttendanceBySession);
 router.put('/sessions/:sessionId/attendance/:studentId', requireAuth, requireRole(['admin', 'instructor']), attendanceController.updateAttendance);

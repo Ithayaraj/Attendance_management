@@ -35,24 +35,43 @@ export const useScanStream = () => {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('WebSocket message received:', data);
+            console.log('=== WebSocket message received ===');
+            console.log('Raw data:', data);
+            console.log('Data type:', data.type);
+            console.log('Data payload:', data.payload);
 
             if (data.type === 'scan.ingested' || data.type === 'scan.duplicate') {
-              console.log('Setting lastScan for scan.ingested/duplicate');
-              setLastScan({ ...data.payload, type: data.type });
+              console.log('Processing scan.ingested/duplicate - creating lastScan object');
+              const scanData = { 
+                ...data.payload, 
+                type: data.type 
+              };
+              console.log('Setting lastScan with:', scanData);
+              setLastScan(scanData);
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'scan.error') {
               // Handle scan errors for notifications
-              console.log('Setting lastScan for scan.error');
-              setLastScan({ ...data.payload, type: data.type });
+              console.log('Processing scan.error - creating lastScan object');
+              const scanData = { 
+                ...data.payload, 
+                type: data.type 
+              };
+              console.log('Setting lastScan with:', scanData);
+              setLastScan(scanData);
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'attendance.updated') {
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'session.status') {
               setSessionStatus(data.payload);
+            } else if (data.type === 'connected') {
+              // Handle connection confirmation message
+              console.log('WebSocket connection confirmed:', data.payload?.message);
+            } else {
+              console.log('Unknown WebSocket message type:', data.type);
             }
           } catch (error) {
             console.error('WebSocket message error:', error);
+            console.error('Event data:', event.data);
           }
         };
 

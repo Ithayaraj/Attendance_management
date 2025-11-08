@@ -17,7 +17,7 @@ import { PageLoader, ButtonSpinner } from './components/LoadingSpinner';
 
 function AppContent() {
   const { user, loading, login, logout, loginLoading, logoutLoading } = useAuth();
-  const { lastScan } = useScanStream();
+  const { lastScan, connected } = useScanStream();
   const { showNotification, notifications, removeNotification } = useNotification();
   // Initialize currentPage from URL or default to dashboard
   const getInitialPage = () => {
@@ -66,58 +66,138 @@ function AppContent() {
     window.history.pushState({}, '', '/');
   };
   
-  // Show notification when scan is received (matching Arduino LCD display exactly)
+  // Show notification when scan is received with detailed attendance information
   useEffect(() => {
-    if (!user) return; // Don't show notifications if not logged in
+    if (!user) {
+      console.log('No user, skipping notification');
+      return; // Don't show notifications if not logged in
+    }
     
-    if (lastScan) {
+    if (!connected) {
+      console.log('WebSocket not connected, skipping notification');
+      return;
+    }
+    
+    console.log('=== SCAN NOTIFICATION EFFECT TRIGGERED ===');
+    console.log('lastScan:', lastScan);
+    console.log('lastScan type:', lastScan?.type);
+    console.log('user:', user?.name);
+    console.log('WebSocket connected:', connected);
+    console.log('showNotification function:', typeof showNotification);
+    
+    if (lastScan && lastScan.type) {
       // Create unique ID from scan data to prevent duplicates
       const scanId = `${lastScan.type}_${lastScan.registrationNo || 'unknown'}_${lastScan.checkInAt || Date.now()}`;
       
+      console.log('Generated Scan ID:', scanId);
+      console.log('Last scan ID ref:', lastScanIdRef.current);
+      
       if (scanId !== lastScanIdRef.current) {
         lastScanIdRef.current = scanId;
-        console.log('=== NOTIFICATION TRIGGER ===');
-        console.log('Scan received for notification:', lastScan);
-        const scanType = lastScan.type;
+        console.log('=== PROCESSING NEW SCAN FOR NOTIFICATION ===');
+        console.log('Full scan data:', JSON.stringify(lastScan, null, 2));
         
-        if (scanType === 'scan.error') {
-          // Match Arduino error display: "Error:" on line 1, error message on line 2
-          const errorMsg = lastScan.error || 'Unknown error';
-          console.log('Showing error notification:', errorMsg);
-          showNotification({
-            type: 'error',
-            title: 'Error:',
-            message: errorMsg.length > 16 ? errorMsg.substring(0, 13) + '...' : errorMsg,
-            duration: 6000,
-          });
-        } else if (scanType === 'scan.duplicate') {
-          // Match Arduino: "Already Entered" on line 1, "status (dup)" on line 2
-          const status = lastScan.status || 'present';
-          const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
-          console.log('Showing duplicate notification:', statusLabel);
-          showNotification({
-            type: 'warning',
-            title: 'Already Entered',
-            message: `${statusLabel} (dup)`,
-            duration: 4000,
-          });
-        } else if (scanType === 'scan.ingested') {
-          // Match Arduino: "Allowed (status)" on line 1, "Attendance Saved" on line 2
-          const status = lastScan.status || 'present';
-          const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
-          console.log('Showing success notification:', statusLabel);
-          showNotification({
-            type: 'success',
-            title: `Allowed (${statusLabel})`,
-            message: 'Attendance Saved',
-            duration: 5000,
-          });
-        }
+        const scanType = lastScan.type;
+        console.log('Scan type:', scanType);
+        
+        // Use setTimeout to ensure state is ready
+        setTimeout(() => {
+          // Immediately show notification (no setTimeout needed)
+          if (scanType === 'scan.error') {
+            // Show error with scanned ID if available
+            const errorMsg = lastScan.error || 'Unknown error';
+            const registrationNo = lastScan.registrationNo || 'N/A';
+            console.log('=== SHOWING ERROR NOTIFICATION ===');
+            console.log('Error message:', errorMsg);
+            console.log('Scanned ID:', registrationNo);
+            
+            const errorMessage = registrationNo !== 'N/A' 
+              ? `📋 Scanned ID: ${registrationNo}\n❌ ${errorMsg}`
+              : `❌ ${errorMsg}`;
+            
+            showNotification({
+              type: 'error',
+              title: '❌ Scan Error',
+              message: errorMessage,
+              duration: 7000,
+            });
+          } else if (scanType === 'scan.duplicate') {
+            // Show detailed duplicate attendance information with scanned ID prominently displayed
+            const status = lastScan.status || 'present';
+            const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+            const studentName = lastScan.studentName || 'Unknown';
+            const registrationNo = lastScan.registrationNo || 'N/A';
+            const courseCode = lastScan.courseCode || 'N/A';
+            
+            console.log('=== SHOWING DUPLICATE NOTIFICATION ===');
+            console.log('Data:', { studentName, registrationNo, courseCode, status });
+            
+            // Create message with scanned ID prominently displayed first
+            const message = `📋 Scanned ID: ${registrationNo}\n👤 ${studentName}\n📚 ${courseCode}\n⚠️ Status: ${statusLabel} (Already Entered)`;
+            showNotification({
+              type: 'warning',
+              title: '⚠️ Duplicate Scan Detected',
+              message: message,
+              duration: 6000,
+            });
+          } else if (scanType === 'scan.ingested') {
+            // Show detailed attendance information with scanned ID prominently displayed
+            const status = lastScan.status || 'present';
+            const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+            const studentName = lastScan.studentName || 'Unknown';
+            const registrationNo = lastScan.registrationNo || 'N/A';
+            const courseCode = lastScan.courseCode || 'N/A';
+            
+            // Format check-in time
+            let checkInTime = '';
+            if (lastScan.checkInAt) {
+              try {
+                const checkInDate = new Date(lastScan.checkInAt);
+                checkInTime = checkInDate.toLocaleTimeString('en-US', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: true 
+                });
+              } catch (e) {
+                console.error('Error formatting time:', e);
+              }
+            }
+            
+            console.log('=== SHOWING ATTENDANCE NOTIFICATION ===');
+            console.log('Data:', { studentName, registrationNo, courseCode, status, checkInTime });
+            
+            // Create detailed message with scanned ID prominently displayed first
+            const detailedMessage = checkInTime 
+              ? `📋 Scanned ID: ${registrationNo}\n👤 ${studentName}\n📚 ${courseCode}\n⏰ Check-in: ${checkInTime}\n✅ Status: ${statusLabel}`
+              : `📋 Scanned ID: ${registrationNo}\n👤 ${studentName}\n📚 ${courseCode}\n✅ Status: ${statusLabel}`;
+            
+            console.log('Notification details:', {
+              type: 'success',
+              title: `✅ ID Scanned - Attendance Recorded`,
+              message: detailedMessage,
+              duration: 8000
+            });
+            
+            const notificationId = showNotification({
+              type: 'success',
+              title: `✅ ID Scanned - Attendance Recorded`,
+              message: detailedMessage,
+              duration: 8000,
+            });
+            
+            console.log('Notification ID returned:', notificationId);
+            console.log('Notification should be visible now');
+          } else {
+            console.log('Unknown scan type:', scanType);
+          }
+        }, 100); // Small delay to ensure state is ready
       } else {
-        console.log('Skipping duplicate scan notification');
+        console.log('Skipping duplicate scan notification (same scan ID)');
       }
+    } else {
+      console.log('No valid lastScan data or missing type');
     }
-  }, [lastScan, user, showNotification]);
+  }, [lastScan, user, showNotification, connected]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -217,6 +297,19 @@ function AppContent() {
         onRemove={removeNotification} 
       />
       
+      {/* WebSocket Connection Status Indicator */}
+      {user && (
+        <div 
+          className={`fixed bottom-4 right-4 z-[9998] px-3 py-2 rounded-lg shadow-lg text-xs font-medium ${
+            connected 
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700' 
+              : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700'
+          }`}
+        >
+          {connected ? '🟢 Connected' : '🔴 Disconnected'}
+        </div>
+      )}
+      
     <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-x-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
@@ -229,8 +322,8 @@ function AppContent() {
       <Sidebar 
         currentPage={currentPage} 
         onNavigate={(page) => {
-          setCurrentPage(page);
-          setSelectedStudent(null);
+        setCurrentPage(page);
+        setSelectedStudent(null);
           setSidebarOpen(false); // Close sidebar on mobile after navigation
         }}
         isOpen={sidebarOpen}
@@ -281,7 +374,7 @@ function App() {
   return (
     <ThemeProvider>
       <NotificationProvider>
-        <AppContent />
+      <AppContent />
       </NotificationProvider>
     </ThemeProvider>
   );

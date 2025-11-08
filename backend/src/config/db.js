@@ -53,14 +53,14 @@ export const connectDB = async () => {
     console.error(`   ${error.message}\n`);
     
     // Provide helpful error messages
-    if (error.message.includes('IP') || error.message.includes('whitelist')) {
+      if (error.message.includes('IP') || error.message.includes('whitelist')) {
       console.error('📝 Network Access Issue:');
-      console.error('   1. Go to MongoDB Atlas: https://cloud.mongodb.com/');
-      console.error('   2. Navigate to Network Access (Security > Network Access)');
-      console.error('   3. Click "Add IP Address"');
+        console.error('   1. Go to MongoDB Atlas: https://cloud.mongodb.com/');
+        console.error('   2. Navigate to Network Access (Security > Network Access)');
+        console.error('   3. Click "Add IP Address"');
       console.error('   4. Add "0.0.0.0/0" to allow all IPs (or add Vercel IPs)');
       console.error('   5. Wait 1-2 minutes for changes to take effect\n');
-    } else if (error.message.includes('authentication')) {
+      } else if (error.message.includes('authentication')) {
       console.error('📝 Authentication Issue: Check your MongoDB username and password in MONGODB_URI\n');
     }
     

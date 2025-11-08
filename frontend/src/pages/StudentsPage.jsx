@@ -355,7 +355,7 @@ export const StudentsPage = ({ onViewStudent }) => {
             <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Batch:</label>
             <div className="relative w-full sm:w-auto">
               <CustomSelect
-                value={selectedBatchYear}
+              value={selectedBatchYear}
                 onChange={(e) => setSelectedBatchYear(e.target.value)}
                 disabled={loadingBatches}
                 loading={loadingBatches}

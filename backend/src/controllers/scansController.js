@@ -25,7 +25,13 @@ export const ingestScan = async (req, res, next) => {
 
     const result = await processScan(deviceApiKey, registrationNo, effectiveTimestamp, meta);
 
-    broadcast({
+    console.log('=== Scan processed successfully, broadcasting ===');
+    console.log('Already checked in:', result.alreadyCheckedIn);
+    console.log('Student:', result.student.name, result.student.registrationNo);
+    console.log('Course:', result.session.courseCode);
+    console.log('Status:', result.attendanceRecord.status);
+
+    const broadcastData = {
       type: result.alreadyCheckedIn ? 'scan.duplicate' : 'scan.ingested',
       payload: {
         studentId: result.student.id,
@@ -36,7 +42,10 @@ export const ingestScan = async (req, res, next) => {
         status: result.attendanceRecord.status,
         checkInAt: result.attendanceRecord.checkInAt
       }
-    });
+    };
+
+    console.log('Broadcasting data:', JSON.stringify(broadcastData, null, 2));
+    broadcast(broadcastData);
 
     res.json({
       success: true,
@@ -50,14 +59,21 @@ export const ingestScan = async (req, res, next) => {
     });
   } catch (error) {
     // Broadcast error via WebSocket so frontend can show notification
-    broadcast({
+    console.log('=== Scan error occurred, broadcasting error ===');
+    console.log('Error:', error.message);
+    console.log('Registration No:', req.body?.registrationNo || 'Unknown');
+    
+    const errorBroadcastData = {
       type: 'scan.error',
       payload: {
         registrationNo: req.body?.registrationNo || 'Unknown',
         error: error.message || 'Scan failed',
         timestamp: new Date().toISOString()
       }
-    });
+    };
+    
+    console.log('Broadcasting error data:', JSON.stringify(errorBroadcastData, null, 2));
+    broadcast(errorBroadcastData);
     next(error);
   }
 };

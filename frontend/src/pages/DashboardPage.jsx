@@ -104,9 +104,9 @@ export const DashboardPage = () => {
 
     const loadAllSectionsIndependently = () => {
       // Load each section independently - they don't wait for each other
-      loadTopAttendees();
-      loadCourses();
-      loadBatches();
+    loadTopAttendees();
+    loadCourses();
+    loadBatches();
       loadLive();
       loadYearWise();
     };
@@ -355,7 +355,7 @@ export const DashboardPage = () => {
             <div>
               <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Scans</p>
               {analytics ? (
-                <p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{totalScans}</p>
+              <p className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{totalScans}</p>
               ) : (
                 <div className="mt-2">
                   <LoadingSpinner size="sm" className="text-cyan-600" />
@@ -412,7 +412,7 @@ export const DashboardPage = () => {
             Monthly Attendance Distribution
           </h4>
           {analytics ? (
-            <MonthlyPie data={summary} />
+          <MonthlyPie data={summary} />
           ) : (
             <div className="flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
@@ -522,7 +522,7 @@ export const DashboardPage = () => {
                 <span className="text-sm text-slate-500 dark:text-slate-400">Loading session data...</span>
               </div>
             </div>
-          </div>
+        </div>
         ) : yearWise?.session ? (
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Last Session Summary</h4>

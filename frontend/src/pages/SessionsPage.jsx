@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Plus, RefreshCw, PlayCircle, XCircle, Edit, Trash2 } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -8,6 +8,9 @@ const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 export const SessionsPage = () => {
   const [courses, setCourses] = useState([]);
+  const [selectedFaculty, setSelectedFaculty] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [selectedYear, setSelectedYear] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,6 +19,62 @@ export const SessionsPage = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [editing, setEditing] = useState(null);
   const coursesLoadedRef = useRef(false);
+  const isRestoringRef = useRef(false);
+
+  // Extract year and semester from course code
+  const getYearSemesterFromCode = (code) => {
+    if (!code || typeof code !== 'string') return null;
+    const match = code.match(/^[A-Za-z]+(\d)(\d)/);
+    if (!match) return null;
+    return { year: Number(match[1]), semester: Number(match[2]) };
+  };
+
+  // Faculty and Department structure
+  const facultyStructure = {
+    'Faculty of Applied Science': {
+      departments: [
+        { name: 'Department of Bio-science', code: 'BIO' },
+        { name: 'Department of Physical Science', code: 'PS' }
+      ]
+    },
+    'Faculty of Business Studies': {
+      departments: [
+        { name: 'Department of Business Economics', code: 'BE' },
+        { name: 'Department of Human Resource Management', code: 'HRM' },
+        { name: 'Department of Marketing Management', code: 'MM' },
+        { name: 'Department of Management and Entrepreneurship', code: 'ME' },
+        { name: 'Department of Project Management', code: 'PM' },
+        { name: 'Department of Finance and Accountancy', code: 'FA' },
+        { name: 'Department of Banking and Insurance', code: 'BI' }
+      ]
+    },
+    'Faculty of Technological Studies': {
+      departments: [
+        { name: 'Department of Information and Communication Technology', code: 'ICTS' }
+      ]
+    }
+  };
+
+  const availableDepartments = useMemo(() => {
+    if (!selectedFaculty || !facultyStructure[selectedFaculty]) return [];
+    return facultyStructure[selectedFaculty].departments;
+  }, [selectedFaculty]);
+
+  // Filter courses by selected department and year
+  const filteredCourses = useMemo(() => {
+    if (!selectedDepartment) return [];
+    let filtered = courses.filter(c => c.department === selectedDepartment);
+    
+    // Filter by year if selected
+    if (selectedYear) {
+      filtered = filtered.filter(c => {
+        const yearInfo = getYearSemesterFromCode(c.code);
+        return yearInfo?.year === Number(selectedYear);
+      });
+    }
+    
+    return filtered;
+  }, [courses, selectedDepartment, selectedYear]);
   const roundToQuarter = (date) => {
     const d = new Date(date);
     const minutes = d.getMinutes();
@@ -62,16 +121,48 @@ export const SessionsPage = () => {
     }
   };
 
-  // Check if a session has ended (current time > endTime on session date)
-  const isSessionEnded = (session) => {
-    if (!session.date || !session.endTime) return false;
+  // Helper to create date from date string and time string
+  const getSessionDateTime = (dateString, timeString) => {
+    if (!dateString || !timeString) return null;
+    const [hour, minute] = timeString.split(':').map(Number);
+    const dateTime = new Date(dateString);
+    dateTime.setHours(hour, minute, 0, 0);
+    return dateTime;
+  };
+
+  // Check if a session has started (current time >= startTime on session date)
+  const isSessionStarted = (session) => {
+    if (!session.date || !session.startTime) return false;
     
     const now = new Date();
-    const [endHour, endMinute] = session.endTime.split(':').map(Number);
-    const sessionEndDate = new Date(session.date);
-    sessionEndDate.setHours(endHour, endMinute, 0, 0);
+    const sessionStartDate = getSessionDateTime(session.date, session.startTime);
+    if (!sessionStartDate) return false;
+    
+    return now >= sessionStartDate;
+  };
+
+  // Check if a session has ended (current time > endTime on session date, accounting for midnight rollover)
+  const isSessionEnded = (session) => {
+    if (!session.date || !session.startTime || !session.endTime) return false;
+    
+    const now = new Date();
+    const sessionStartDate = getSessionDateTime(session.date, session.startTime);
+    let sessionEndDate = getSessionDateTime(session.date, session.endTime);
+    
+    if (!sessionStartDate || !sessionEndDate) return false;
+    
+    // If end time is earlier than start time (e.g., 23:15 -> 00:15), session spans midnight
+    // So end time is on the next day
+    if (sessionEndDate < sessionStartDate) {
+      sessionEndDate.setDate(sessionEndDate.getDate() + 1);
+    }
     
     return now > sessionEndDate;
+  };
+
+  // Check if a session should be live (started but not ended)
+  const shouldBeLive = (session) => {
+    return isSessionStarted(session) && !isSessionEnded(session);
   };
 
   const loadSessions = useCallback(async (courseId) => {
@@ -94,27 +185,82 @@ export const SessionsPage = () => {
     }
   }, []);
 
-  // Automatically close expired sessions
-  const checkAndCloseExpiredSessions = useCallback(async (sessionsList) => {
+  // Automatically update session statuses (scheduled -> live -> closed)
+  const checkAndUpdateSessionStatuses = useCallback(async (sessionsList) => {
     if (!selectedCourseId) return;
     
+    const updates = [];
+    
+    // Check for sessions that should be closed (ended)
     const expiredSessions = sessionsList.filter(s => 
       (s.status === 'live' || s.status === 'scheduled') && isSessionEnded(s)
     );
 
-    if (expiredSessions.length > 0) {
-      // Update all expired sessions to closed
-      const updatePromises = expiredSessions.map(session =>
-        apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'closed' })
-          .catch(err => console.error(`Failed to close session ${session._id}:`, err))
-      );
+    // Check for sessions that should be live (started but not ended)
+    const sessionsToLive = sessionsList.filter(s => 
+      s.status === 'scheduled' && shouldBeLive(s)
+    );
 
-      await Promise.all(updatePromises);
+    // Update expired sessions to closed
+    if (expiredSessions.length > 0) {
+      expiredSessions.forEach(session => {
+        updates.push(
+          apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'closed' })
+            .catch(err => console.error(`Failed to close session ${session._id}:`, err))
+        );
+      });
+    }
+
+    // Update scheduled sessions to live when start time arrives
+    if (sessionsToLive.length > 0) {
+      sessionsToLive.forEach(session => {
+        updates.push(
+          apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'live' })
+            .catch(err => console.error(`Failed to set session ${session._id} to live:`, err))
+        );
+      });
+    }
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
       
-      // Reload sessions after closing expired ones
+      // Reload sessions after updating statuses
       await loadSessions(selectedCourseId);
     }
   }, [selectedCourseId, loadSessions]);
+
+  // Restore filter selections from sessionStorage on mount
+  useEffect(() => {
+    const savedFilters = sessionStorage.getItem('sessions_filters');
+    if (savedFilters) {
+      try {
+        isRestoringRef.current = true;
+        const filters = JSON.parse(savedFilters);
+        if (filters.faculty) setSelectedFaculty(filters.faculty);
+        if (filters.department) setSelectedDepartment(filters.department);
+        if (filters.year) setSelectedYear(filters.year);
+        if (filters.courseId) setSelectedCourseId(filters.courseId);
+        // Reset the flag after a short delay to allow state updates
+        setTimeout(() => {
+          isRestoringRef.current = false;
+        }, 100);
+      } catch (e) {
+        console.error('Error restoring filters:', e);
+        isRestoringRef.current = false;
+      }
+    }
+  }, []);
+
+  // Save filter selections to sessionStorage whenever they change
+  useEffect(() => {
+    const filters = {
+      faculty: selectedFaculty,
+      department: selectedDepartment,
+      year: selectedYear,
+      courseId: selectedCourseId
+    };
+    sessionStorage.setItem('sessions_filters', JSON.stringify(filters));
+  }, [selectedFaculty, selectedDepartment, selectedYear, selectedCourseId]);
 
   useEffect(() => {
     // Check cache for courses
@@ -146,6 +292,13 @@ export const SessionsPage = () => {
     }
   }, []);
 
+  // Reset course when department or year changes (but not during restoration)
+  useEffect(() => {
+    if (isRestoringRef.current) return; // Don't reset during restoration
+    setSelectedCourseId('');
+    setSessions([]);
+  }, [selectedDepartment, selectedYear]);
+
   useEffect(() => {
     if (selectedCourseId) {
       // Check cache for sessions
@@ -160,8 +313,8 @@ export const SessionsPage = () => {
           if (age < CACHE_DURATION) {
             setSessions(data);
             
-            // Check for expired sessions even from cache
-            checkAndCloseExpiredSessions(data);
+            // Check and update session statuses even from cache
+            checkAndUpdateSessionStatuses(data);
             
             // Refresh in background if older than 30 seconds
             if (age > 30 * 1000) {
@@ -175,14 +328,14 @@ export const SessionsPage = () => {
       }
       
       loadSessions(selectedCourseId).then(() => {
-        // After loading, check for expired sessions
+        // After loading, check and update session statuses
         if (selectedCourseId) {
           const cacheKey = `sessions_${selectedCourseId}`;
           const cached = sessionStorage.getItem(cacheKey);
           if (cached) {
             try {
               const { data } = JSON.parse(cached);
-              checkAndCloseExpiredSessions(data);
+              checkAndUpdateSessionStatuses(data);
             } catch (e) {
               // ignore
             }
@@ -190,18 +343,18 @@ export const SessionsPage = () => {
         }
       });
     }
-  }, [selectedCourseId, loadSessions, checkAndCloseExpiredSessions]);
+  }, [selectedCourseId, loadSessions, checkAndUpdateSessionStatuses]);
 
-  // Periodically check for expired sessions (every minute)
+  // Periodically check and update session statuses (every minute)
   useEffect(() => {
     if (!selectedCourseId || sessions.length === 0) return;
 
     const interval = setInterval(() => {
-      checkAndCloseExpiredSessions(sessions);
+      checkAndUpdateSessionStatuses(sessions);
     }, 60 * 1000); // Check every minute
 
     return () => clearInterval(interval);
-  }, [selectedCourseId, sessions, checkAndCloseExpiredSessions]);
+  }, [selectedCourseId, sessions, checkAndUpdateSessionStatuses]);
 
   const createSession = async (e) => {
     e.preventDefault();
@@ -280,38 +433,133 @@ export const SessionsPage = () => {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
+      <div className="flex flex-col gap-4">
         <div>
           <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Sessions</h3>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Manage class sessions and go live</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-          <CustomSelect
-            value={selectedCourseId}
-            onChange={(e) => setSelectedCourseId(e.target.value)}
-            placeholder="Select the course"
-            options={[
-              { value: '', label: 'Select the course' },
-              ...courses.map(c => ({
-                value: c._id,
-                label: `${c.code} - ${c.name}`
-              }))
-            ]}
-            className="w-full sm:w-auto"
-          />
-          <button onClick={()=>loadSessions(selectedCourseId)} disabled={!selectedCourseId} className="w-full sm:w-auto px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm">
-            <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Refresh</span>
-          </button>
-          <button onClick={()=>setShowCreate(true)} disabled={!selectedCourseId} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm">
-            <Plus className="w-5 h-5" /> New Session
-          </button>
+        
+        {/* Filter Section */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            {/* Faculty Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Faculty</label>
+              <CustomSelect
+                value={selectedFaculty}
+                onChange={(e) => {
+                  setSelectedFaculty(e.target.value);
+                  setSelectedDepartment('');
+                  setSelectedYear('');
+                  setSelectedCourseId('');
+                }}
+                placeholder="Select Faculty"
+                options={[
+                  { value: '', label: 'Select Faculty' },
+                  { value: 'Faculty of Applied Science', label: 'Faculty of Applied Science' },
+                  { value: 'Faculty of Business Studies', label: 'Faculty of Business Studies' },
+                  { value: 'Faculty of Technological Studies', label: 'Faculty of Technological Studies' }
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+
+            {/* Department Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
+              <CustomSelect
+                value={selectedDepartment}
+                onChange={(e) => {
+                  setSelectedDepartment(e.target.value);
+                  setSelectedCourseId('');
+                }}
+                disabled={!selectedFaculty}
+                placeholder={selectedFaculty ? 'Select Department' : 'Select Faculty first'}
+                options={[
+                  { value: '', label: selectedFaculty ? 'Select Department' : 'Select Faculty first' },
+                  ...availableDepartments.map((dept) => ({
+                    value: dept.name,
+                    label: dept.name
+                  }))
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+
+            {/* Year Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Year</label>
+              <CustomSelect
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(e.target.value);
+                  setSelectedCourseId('');
+                }}
+                disabled={!selectedDepartment}
+                placeholder={selectedDepartment ? 'All Years' : 'Select Department first'}
+                options={[
+                  { value: '', label: selectedDepartment ? 'All Years' : 'Select Department first' },
+                  ...([1, 2, 3, 4].map(y => ({
+                    value: String(y),
+                    label: `Year ${y}`
+                  })))
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+
+            {/* Course Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Course</label>
+              <CustomSelect
+                value={selectedCourseId}
+                onChange={(e) => setSelectedCourseId(e.target.value)}
+                disabled={!selectedDepartment}
+                placeholder={selectedDepartment ? 'Select Course' : 'Select Department first'}
+                options={[
+                  { value: '', label: selectedDepartment ? 'Select Course' : 'Select Department first' },
+                  ...filteredCourses.map(c => ({
+                    value: c._id,
+                    label: `${c.code} - ${c.name}`
+                  }))
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+            <button 
+              onClick={()=>loadSessions(selectedCourseId)} 
+              disabled={!selectedCourseId} 
+              className="w-full sm:w-auto px-3 sm:px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" /> 
+              <span>Refresh</span>
+            </button>
+            <button 
+              onClick={()=>setShowCreate(true)} 
+              disabled={!selectedCourseId} 
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
+            >
+              <Plus className="w-4 h-4" /> 
+              <span>New Session</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
         {!selectedCourseId ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400">
-            Select the course first
+            {!selectedFaculty ? (
+              <p>Please select Faculty, Department, Year (optional), and Course to view sessions</p>
+            ) : !selectedDepartment ? (
+              <p>Please select Department, Year (optional), and Course to view sessions</p>
+            ) : (
+              <p>Please select a Course to view sessions</p>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">

@@ -55,17 +55,17 @@ export const useAuth = () => {
       setLogoutLoading(true);
       if (refreshToken) {
         try {
-          await apiClient.post('/api/auth/logout', { refreshToken });
+        await apiClient.post('/api/auth/logout', { refreshToken });
         } catch (error) {
           // Ignore logout API errors, still clear local storage
           console.error('Logout API error:', error);
         }
       }
     } finally {
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
-      setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    setUser(null);
       setLogoutLoading(false);
       // Dispatch logout event for other components
       window.dispatchEvent(new CustomEvent('auth:logout'));

@@ -22,12 +22,19 @@ export const NotificationProvider = ({ children }) => {
       ...notification,
     };
 
-    console.log('Adding notification:', newNotification);
+    console.log('=== showNotification called ===');
+    console.log('New notification:', JSON.stringify(newNotification, null, 2));
+    
     setNotifications((prev) => {
       const updated = [...prev, newNotification];
-      console.log('Total notifications:', updated.length);
+      console.log('=== Notification state updated ===');
+      console.log('Previous count:', prev.length);
+      console.log('New count:', updated.length);
+      console.log('All notifications:', JSON.stringify(updated, null, 2));
       return updated;
     });
+    
+    console.log('Notification ID returned:', id);
     return id;
   }, []);
 

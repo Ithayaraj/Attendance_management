@@ -39,13 +39,13 @@ export const CustomSelect = ({
   };
 
   return (
-    <div ref={selectRef} className={`relative ${className}`}>
+    <div ref={selectRef} className={`relative min-w-0 ${className}`}>
       <button
         type="button"
         onClick={() => !disabled && !loading && setIsOpen(!isOpen)}
         disabled={disabled || loading}
         className={`
-          w-full sm:w-auto px-2.5 sm:px-3 py-1.5 sm:py-2 
+          w-full px-2.5 sm:px-3 py-1.5 sm:py-2 
           border border-slate-300 dark:border-slate-600 
           rounded-lg 
           focus:ring-2 focus:ring-cyan-500 
@@ -54,13 +54,14 @@ export const CustomSelect = ({
           disabled:opacity-50 disabled:cursor-not-allowed
           flex items-center justify-between gap-2
           bg-white dark:bg-slate-800
+          min-w-0
           ${isOpen ? 'ring-2 ring-cyan-500' : ''}
         `}
       >
-        <span className="text-xs sm:text-sm truncate">
+        <span className="text-xs sm:text-sm truncate min-w-0 flex-1 text-left">
           {loading ? 'Loading...' : selectedOption ? selectedOption.label : placeholder}
         </span>
-        <ChevronDown className={`w-3 h-3 sm:w-4 sm:h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3 h-3 sm:w-4 sm:h-4 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && !disabled && !loading && (

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { Plus, Trash2, Edit } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { useAuth } from '../hooks/useAuth';
@@ -15,12 +15,120 @@ export const CoursesPage = () => {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ code: '', name: '', department: '', credits: 3 });
+  const [selectedFaculty, setSelectedFaculty] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState('');
   const [filterYear, setFilterYear] = useState(''); // '' means All
   const hasLoadedRef = useRef(false);
 
+  // Faculty and Department structure
+  const facultyStructure = {
+    'Faculty of Applied Science': {
+      departments: [
+        { name: 'Department of Bio-science', code: 'BIO' },
+        { name: 'Department of Physical Science', code: 'PS' }
+      ]
+    },
+    'Faculty of Business Studies': {
+      departments: [
+        { name: 'Department of Business Economics', code: 'BE' },
+        { name: 'Department of Human Resource Management', code: 'HRM' },
+        { name: 'Department of Marketing Management', code: 'MM' },
+        { name: 'Department of Management and Entrepreneurship', code: 'ME' },
+        { name: 'Department of Project Management', code: 'PM' },
+        { name: 'Department of Finance and Accountancy', code: 'FA' },
+        { name: 'Department of Banking and Insurance', code: 'BI' }
+      ]
+    },
+    'Faculty of Technological Studies': {
+      departments: [
+        { name: 'Department of Information and Communication Technology', code: 'ICTS' }
+      ]
+    }
+  };
+
+  const availableDepartments = useMemo(() => {
+    if (!selectedFaculty || !facultyStructure[selectedFaculty]) return [];
+    return facultyStructure[selectedFaculty].departments;
+  }, [selectedFaculty]);
+
+  const getYearSemesterFromCode = (code) => {
+    if (!code || typeof code !== 'string') return null;
+    const match = code.match(/^[A-Za-z]+(\d)(\d)/);
+    if (!match) return null;
+    return { year: Number(match[1]), semester: Number(match[2]) };
+  };
+
+  const getCreditsFromCode = (code) => {
+    if (!code || typeof code !== 'string') return 3;
+    const match = code.match(/(\d)(?!.*\d)/); // last digit in the string
+    return match ? Number(match[1]) : 3;
+  };
+
+  const load = useCallback(async () => {
+    // Don't load if filters are not selected
+    if (!selectedFaculty || !selectedDepartment) {
+      setCourses([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await apiClient.get('/api/courses');
+      const coursesData = res.data || [];
+      setCourses(coursesData);
+      hasLoadedRef.current = true;
+      
+      // Cache the data with filter-specific key
+      const cacheKey = `${CACHE_KEY}_${selectedFaculty}_${selectedDepartment}_${filterYear || 'all'}`;
+      sessionStorage.setItem(cacheKey, JSON.stringify({
+        data: coursesData,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Failed to load courses');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedFaculty, selectedDepartment, filterYear]);
+
+  // Filter courses by faculty, department, and year
+  const filteredCourses = useMemo(() => {
+    let filtered = courses;
+
+    // Filter by department if selected
+    if (selectedDepartment) {
+      filtered = filtered.filter(c => c.department === selectedDepartment);
+    } else if (selectedFaculty) {
+      // If only faculty is selected, filter by all departments in that faculty
+      const deptNames = availableDepartments.map(d => d.name);
+      filtered = filtered.filter(c => deptNames.includes(c.department));
+    }
+
+    // Filter by year if selected
+    if (filterYear) {
+      filtered = filtered.filter(c => {
+        const yearInfo = getYearSemesterFromCode(c.code);
+        return yearInfo?.year === Number(filterYear);
+      });
+    }
+
+    return filtered;
+  }, [courses, selectedFaculty, selectedDepartment, filterYear, availableDepartments]);
+
+  // Only load courses when filters are selected
   useEffect(() => {
+    // Don't load if filters are not selected
+    if (!selectedFaculty || !selectedDepartment) {
+      setCourses([]);
+      setLoading(false);
+      return;
+    }
+
     // Check cache first
-    const cached = sessionStorage.getItem(CACHE_KEY);
+    const cacheKey = `${CACHE_KEY}_${selectedFaculty}_${selectedDepartment}_${filterYear || 'all'}`;
+    const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
       try {
         const { data, timestamp } = JSON.parse(cached);
@@ -46,45 +154,15 @@ export const CoursesPage = () => {
     if (!hasLoadedRef.current) {
       load();
     }
-  }, []);
-
-  const getYearSemesterFromCode = (code) => {
-    if (!code || typeof code !== 'string') return null;
-    const match = code.match(/^[A-Za-z]+(\d)(\d)/);
-    if (!match) return null;
-    return { year: Number(match[1]), semester: Number(match[2]) };
-  };
-
-  const getCreditsFromCode = (code) => {
-    if (!code || typeof code !== 'string') return 3;
-    const match = code.match(/(\d)(?!.*\d)/); // last digit in the string
-    return match ? Number(match[1]) : 3;
-  };
-
-  const load = async () => {
-    try {
-      setLoading(true);
-      const res = await apiClient.get('/api/courses');
-      const coursesData = res.data || [];
-      setCourses(coursesData);
-      hasLoadedRef.current = true;
-      
-      // Cache the data
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-        data: coursesData,
-        timestamp: Date.now()
-      }));
-    } catch (e) {
-      console.error(e);
-      alert(e.message || 'Failed to load courses');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [selectedFaculty, selectedDepartment, filterYear, load]);
 
   const openCreate = () => {
+    if (!selectedFaculty || !selectedDepartment || !filterYear) {
+      alert('Please select Faculty, Department, and Year before creating a course');
+      return;
+    }
     setEditing(null);
-    setForm({ code: '', name: '', department: '', credits: 3 });
+    setForm({ code: '', name: '', department: selectedDepartment, credits: 3 });
     setShowModal(true);
   };
 
@@ -110,7 +188,8 @@ export const CoursesPage = () => {
       }
       setShowModal(false);
       // Clear cache and reload
-      sessionStorage.removeItem(CACHE_KEY);
+      const cacheKey = `${CACHE_KEY}_${selectedFaculty}_${selectedDepartment}_${filterYear || 'all'}`;
+      sessionStorage.removeItem(cacheKey);
       hasLoadedRef.current = false;
       await load();
     } catch (e) {
@@ -123,7 +202,8 @@ export const CoursesPage = () => {
     try {
       await apiClient.delete(`/api/courses/${id}`);
       // Clear cache and reload
-      sessionStorage.removeItem(CACHE_KEY);
+      const cacheKey = `${CACHE_KEY}_${selectedFaculty}_${selectedDepartment}_${filterYear || 'all'}`;
+      sessionStorage.removeItem(cacheKey);
       hasLoadedRef.current = false;
       await load();
     } catch (e) {
@@ -132,32 +212,86 @@ export const CoursesPage = () => {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
+    <div className="p-6 space-y-6">
+      <div className="flex flex-col gap-4">
         <div>
           <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Courses</h3>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Create and manage courses</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-            <label className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">Year</label>
-            <CustomSelect
-              value={filterYear}
-              onChange={(e) => setFilterYear(e.target.value)}
-              placeholder="All"
-              options={[
-                { value: '', label: 'All' },
-                ...([1,2,3,4].map(y => ({
-                  value: String(y),
-                  label: String(y)
-                })))
-              ]}
-              className="w-full sm:w-auto"
-            />
-        </div>
-        <button onClick={openCreate} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-xs sm:text-sm w-full sm:w-auto">
-          <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> <span>New Course</span>
-        </button>
+        
+        {/* Filter Section */}
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            {/* Faculty Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Faculty</label>
+              <CustomSelect
+                value={selectedFaculty}
+                onChange={(e) => {
+                  setSelectedFaculty(e.target.value);
+                  setSelectedDepartment('');
+                }}
+                placeholder="Select Faculty"
+                options={[
+                  { value: '', label: 'Select Faculty' },
+                  { value: 'Faculty of Applied Science', label: 'Faculty of Applied Science' },
+                  { value: 'Faculty of Business Studies', label: 'Faculty of Business Studies' },
+                  { value: 'Faculty of Technological Studies', label: 'Faculty of Technological Studies' }
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+
+            {/* Department Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
+              <CustomSelect
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                disabled={!selectedFaculty}
+                placeholder={selectedFaculty ? 'All Departments' : 'Select Faculty first'}
+                options={[
+                  { value: '', label: selectedFaculty ? 'All Departments' : 'Select Faculty first' },
+                  ...availableDepartments.map((dept) => ({
+                    value: dept.name,
+                    label: dept.name
+                  }))
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+
+            {/* Year Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Year</label>
+              <CustomSelect
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+                placeholder="All Years"
+                options={[
+                  { value: '', label: 'All Years' },
+                  ...([1, 2, 3, 4].map(y => ({
+                    value: String(y),
+                    label: `Year ${y}`
+                  })))
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+
+            {/* Action Button */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 opacity-0">Actions</label>
+              <button 
+                onClick={openCreate}
+                disabled={!selectedFaculty || !selectedDepartment || !filterYear}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-xs sm:text-sm w-full disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" /> 
+                <span>New Course</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -176,7 +310,13 @@ export const CoursesPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-              {loading ? (
+              {!selectedFaculty || !selectedDepartment ? (
+                <tr>
+                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                    <p>Please select Faculty and Department to view courses</p>
+                  </td>
+                </tr>
+              ) : loading ? (
                 <tr>
                   <td colSpan="7" className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center gap-3">
@@ -185,10 +325,12 @@ export const CoursesPage = () => {
                     </div>
                   </td>
                 </tr>
-              ) : courses.length === 0 ? (
-                <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">No courses</td></tr>
+              ) : filteredCourses.length === 0 ? (
+                <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">
+                  {courses.length === 0 ? 'No courses found' : 'No courses match the selected filters'}
+                </td></tr>
               ) : (
-                (filterYear ? courses.filter(c => getYearSemesterFromCode(c.code)?.year === Number(filterYear)) : courses).map(c => (
+                filteredCourses.map(c => (
                   <tr key={c._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                     <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{c.code}</td>
                     <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{c.name}</td>
@@ -231,17 +373,23 @@ export const CoursesPage = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Department</label>
-                  <CustomSelect
-                    value={form.department}
-                    onChange={(e) => setForm({...form, department: e.target.value})}
-                    placeholder="Select Department"
-                    options={[
-                      { value: 'Technological Studies', label: 'Technological Studies' },
-                      { value: 'Applied Science', label: 'Applied Science' },
-                      { value: 'Business Studies', label: 'Business Studies' }
-                    ]}
-                    className="w-full"
+                  <input 
+                    type="text" 
+                    value={form.department} 
+                    disabled
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 cursor-not-allowed"
                   />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Department is set from filter selection</p>
+                </div>
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Year</label>
+                  <input 
+                    type="text" 
+                    value={filterYear ? `Year ${filterYear}` : ''} 
+                    disabled
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Year is set from filter selection</p>
                 </div>
                 {/* Semester field removed; derived from code, not entered manually */}
               </div>
