@@ -8,8 +8,8 @@ export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = fa
   const { showNotification } = useNotification();
 
   return (
-    <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
-      <div className="px-4 sm:px-6 py-4">
+    <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 w-full">
+      <div className="px-4 sm:px-6 py-4 w-full">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             {/* Hamburger button for mobile */}
@@ -78,10 +78,11 @@ export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = fa
                 </div>
               </div>
 
+              {/* Desktop Logout Button - Hidden on mobile */}
               <button
                 onClick={onLogout}
                 disabled={logoutLoading}
-                className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="hidden md:flex p-2.5 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed items-center justify-center"
                 title="Logout"
               >
                 {logoutLoading ? (

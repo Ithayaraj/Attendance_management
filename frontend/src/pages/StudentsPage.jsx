@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, Eye, Edit, Trash2, Download } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { CustomSelect } from '../components/CustomSelect';
 
 export const StudentsPage = ({ onViewStudent }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -318,8 +319,8 @@ export const StudentsPage = ({ onViewStudent }) => {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Student Management</h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Manage student records and information</p>
+          <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Student Management</h3>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Manage student records and information</p>
         </div>
         <button
           onClick={() => {
@@ -348,63 +349,72 @@ export const StudentsPage = ({ onViewStudent }) => {
         </button>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 mb-6">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Batch:</label>
-            <div className="relative">
-              <select
+      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-3 sm:p-4 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 flex-wrap">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Batch:</label>
+            <div className="relative w-full sm:w-auto">
+              <CustomSelect
                 value={selectedBatchYear}
-                onChange={(e)=>setSelectedBatchYear(e.target.value)}
+                onChange={(e) => setSelectedBatchYear(e.target.value)}
                 disabled={loadingBatches}
-                className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed pr-8"
-              >
-                <option value="">{loadingBatches ? 'Loading batches...' : 'Select Batch'}</option>
-                {batches.map((b) => (
-                  <option key={b._id} value={String(b.startYear)}>{b.name || b.startYear}</option>
-                ))}
-              </select>
-              {(loadingBatches || (loading && selectedBatchYear)) && (
+                loading={loadingBatches}
+                placeholder={loadingBatches ? 'Loading batches...' : 'Select Batch'}
+                options={[
+                  { value: '', label: loadingBatches ? 'Loading batches...' : 'Select Batch' },
+                  ...batches.map((b) => ({
+                    value: String(b.startYear),
+                    label: b.name || b.startYear
+                  }))
+                ]}
+                className="w-full sm:w-auto"
+              />
+              {(loading && selectedBatchYear) && (
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
                   <LoadingSpinner size="sm" className="text-cyan-600" />
                 </div>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Faculty:</label>
-            <select
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Faculty:</label>
+            <CustomSelect
               value={selectedFaculty}
-              onChange={(e)=> {
+              onChange={(e) => {
                 setSelectedFaculty(e.target.value);
                 setSelectedDepartment('');
               }}
-              className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm"
-            >
-              <option value="">Select Faculty</option>
-              <option value="Faculty of Applied Science">Faculty of Applied Science</option>
-              <option value="Faculty of Business Studies">Faculty of Business Studies</option>
-              <option value="Faculty of Technological Studies">Faculty of Technological Studies</option>
-            </select>
+              placeholder="Select Faculty"
+              options={[
+                { value: '', label: 'Select Faculty' },
+                { value: 'Faculty of Applied Science', label: 'Faculty of Applied Science' },
+                { value: 'Faculty of Business Studies', label: 'Faculty of Business Studies' },
+                { value: 'Faculty of Technological Studies', label: 'Faculty of Technological Studies' }
+              ]}
+              className="w-full sm:w-auto"
+            />
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Department:</label>
-            <select
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Department:</label>
+            <CustomSelect
               value={selectedDepartment}
-              onChange={(e)=>setSelectedDepartment(e.target.value)}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
               disabled={!selectedFaculty}
-              className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="">{selectedFaculty ? 'Select Department' : 'Select Faculty first'}</option>
-              {availableDepartments.map((dept) => (
-                <option key={dept.code} value={dept.name}>{dept.name}</option>
-              ))}
-            </select>
+              placeholder={selectedFaculty ? 'Select Department' : 'Select Faculty first'}
+              options={[
+                { value: '', label: selectedFaculty ? 'Select Department' : 'Select Faculty first' },
+                ...availableDepartments.map((dept) => ({
+                  value: dept.name,
+                  label: dept.name
+                }))
+              ]}
+              className="w-full sm:w-auto"
+            />
           </div>
           {regPrefix && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Registration Prefix:</span>
-              <span className="text-sm font-mono text-slate-900 dark:text-white font-semibold">{regPrefix}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 rounded-lg w-full sm:w-auto">
+              <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Registration Prefix:</span>
+              <span className="text-xs sm:text-sm font-mono text-slate-900 dark:text-white font-semibold">{regPrefix}</span>
             </div>
           )}
         </div>
@@ -587,61 +597,62 @@ export const StudentsPage = ({ onViewStudent }) => {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Department *
                   </label>
                   {editingStudent ? (
-                    <select
-                      required
+                    <CustomSelect
                       value={formData.department}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="" disabled>Select Department</option>
-                      {Object.values(facultyStructure).flatMap(faculty => 
-                        faculty.departments.map(dept => (
-                          <option key={dept.code} value={dept.name}>{dept.name}</option>
-                        ))
+                      placeholder="Select Department"
+                      options={Object.values(facultyStructure).flatMap(faculty => 
+                        faculty.departments.map(dept => ({
+                          value: dept.name,
+                          label: dept.name
+                        }))
                       )}
-                    </select>
+                      className="w-full"
+                    />
                   ) : (
                     <input
                       type="text"
                       value={selectedDepartment || ''}
                       disabled
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 cursor-not-allowed"
+                      className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 cursor-not-allowed text-xs sm:text-sm"
                     />
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Year *
                   </label>
-                  <select
-                    required
+                  <CustomSelect
                     value={formData.year}
                     onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white"
-                  >
-                    {[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}
-                  </select>
+                    placeholder="Select Year"
+                    options={[1, 2, 3, 4].map(y => ({
+                      value: y,
+                      label: `Year ${y}`
+                    }))}
+                    className="w-full"
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Semester *
                   </label>
-                  <select
-                    required
+                  <CustomSelect
                     value={formData.semester}
                     onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white"
-                  >
-                    {[1, 2].map(s => (
-                      <option key={s} value={s}>{s === 1 ? '1st Semester' : '2nd Semester'}</option>
-                    ))}
-                  </select>
+                    placeholder="Select Semester"
+                    options={[1, 2].map(s => ({
+                      value: s,
+                      label: s === 1 ? '1st Semester' : '2nd Semester'
+                    }))}
+                    className="w-full"
+                  />
                 </div>
               </div>
 

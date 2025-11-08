@@ -41,4 +41,46 @@ body {
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-400 dark:bg-slate-500;
   }
+
+  /* Responsive select dropdown styling */
+  select {
+    font-size: 0.75rem; /* text-xs - 12px on mobile */
+  }
+
+  @media (min-width: 640px) {
+    select {
+      font-size: 0.875rem; /* text-sm - 14px on larger screens */
+    }
+  }
+
+  /* Style option elements for better responsiveness */
+  select option {
+    font-size: 0.75rem; /* text-xs on mobile */
+    padding: 0.25rem 0.5rem;
+  }
+
+  @media (min-width: 640px) {
+    select option {
+      font-size: 0.875rem; /* text-sm on larger screens */
+      padding: 0.375rem 0.75rem;
+    }
+  }
+
+  /* Ensure select elements are responsive */
+  select.text-xs {
+    font-size: 0.75rem;
+  }
+
+  select.text-xs option {
+    font-size: 0.75rem;
+  }
+
+  @media (min-width: 640px) {
+    select.text-xs.sm\:text-sm {
+      font-size: 0.875rem;
+    }
+    select.text-xs.sm\:text-sm option {
+      font-size: 0.875rem;
+    }
+  }
 }

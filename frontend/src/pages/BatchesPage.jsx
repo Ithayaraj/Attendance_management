@@ -113,22 +113,22 @@ export const BatchesPage = () => {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Batches</h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Create and manage student batches</p>
+          <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Batches</h3>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Create and manage student batches</p>
         </div>
       </div>
 
-      <form onSubmit={create} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-5 grid grid-cols-3 gap-4">
+      <form onSubmit={create} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-3 sm:p-5 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Year</label>
-          <input type="number" required value={year} onChange={(e)=>setYear(e.target.value)} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" placeholder="e.g. 2019" />
+          <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Year</label>
+          <input type="number" required value={year} onChange={(e)=>setYear(e.target.value)} className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-xs sm:text-sm" placeholder="e.g. 2019" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name (optional)</label>
-          <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" placeholder="e.g. 2019 Batch" />
+          <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name (optional)</label>
+          <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-xs sm:text-sm" placeholder="e.g. 2019 Batch" />
         </div>
         <div className="flex items-end">
-          <button type="submit" className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium"><Plus className="w-5 h-5"/>Create</button>
+          <button type="submit" className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-xs sm:text-sm"><Plus className="w-4 h-4 sm:w-5 sm:h-5"/>Create</button>
         </div>
       </form>
 
@@ -177,15 +177,15 @@ export const BatchesPage = () => {
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Batch</h3>
               <button onClick={()=>setEditing(null)} className="text-slate-500 hover:text-slate-700">✕</button>
             </div>
-            <form onSubmit={saveEdit} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={saveEdit} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Year</label>
-                  <input type="number" required value={editYear} onChange={(e)=>setEditYear(e.target.value)} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Year</label>
+                  <input type="number" required value={editYear} onChange={(e)=>setEditYear(e.target.value)} className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-xs sm:text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
-                  <input type="text" value={editName} onChange={(e)=>setEditName(e.target.value)} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                  <input type="text" value={editName} onChange={(e)=>setEditName(e.target.value)} className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-xs sm:text-sm" />
                 </div>
               </div>
               <div className="flex justify-end gap-3 pt-2">

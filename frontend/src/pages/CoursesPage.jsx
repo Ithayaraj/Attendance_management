@@ -3,6 +3,7 @@ import { Plus, Trash2, Edit } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { useAuth } from '../hooks/useAuth';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { CustomSelect } from '../components/CustomSelect';
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const CACHE_KEY = 'courses_data';
@@ -132,27 +133,30 @@ export const CoursesPage = () => {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-4 sm:mb-6">
         <div>
-          <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Courses</h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Create and manage courses</p>
+          <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Courses</h3>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Create and manage courses</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-600 dark:text-slate-400">Year</label>
-            <select
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+            <label className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">Year</label>
+            <CustomSelect
               value={filterYear}
-              onChange={(e)=>setFilterYear(e.target.value)}
-              className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">All</option>
-              {[1,2,3,4].map(y => (
-                <option key={y} value={String(y)}>{y}</option>
-              ))}
-            </select>
+              onChange={(e) => setFilterYear(e.target.value)}
+              placeholder="All"
+              options={[
+                { value: '', label: 'All' },
+                ...([1,2,3,4].map(y => ({
+                  value: String(y),
+                  label: String(y)
+                })))
+              ]}
+              className="w-full sm:w-auto"
+            />
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium">
-          <Plus className="w-5 h-5" /> New Course
+        <button onClick={openCreate} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-xs sm:text-sm w-full sm:w-auto">
+          <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> <span>New Course</span>
         </button>
         </div>
       </div>
@@ -224,20 +228,20 @@ export const CoursesPage = () => {
                   <input type="text" required value={form.name} onChange={(e)=>setForm({...form, name:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Department</label>
-                  <select
-                    required
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Department</label>
+                  <CustomSelect
                     value={form.department}
-                    onChange={(e)=>setForm({...form, department:e.target.value})}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="" disabled>Select Department</option>
-                    <option value="Technological Studies">Technological Studies</option>
-                    <option value="Applied Science">Applied Science</option>
-                    <option value="Business Studies">Business Studies</option>
-                  </select>
+                    onChange={(e) => setForm({...form, department: e.target.value})}
+                    placeholder="Select Department"
+                    options={[
+                      { value: 'Technological Studies', label: 'Technological Studies' },
+                      { value: 'Applied Science', label: 'Applied Science' },
+                      { value: 'Business Studies', label: 'Business Studies' }
+                    ]}
+                    className="w-full"
+                  />
                 </div>
                 {/* Semester field removed; derived from code, not entered manually */}
               </div>

@@ -6,6 +6,7 @@ import { useMonthlyAnalytics } from '../hooks/useMonthlyAnalytics';
 import { useScanStream } from '../hooks/useScanStream';
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { CustomSelect } from '../components/CustomSelect';
 
 // Cache duration: 2 minutes for dashboard data
 const CACHE_DURATION = 2 * 60 * 1000;
@@ -422,22 +423,25 @@ export const DashboardPage = () => {
           )}
         </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-lg font-semibold text-slate-900 dark:text-white">Batch Trend (Last 12 months)</h4>
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
+            <h4 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white">Batch Trend (Last 12 months)</h4>
             {loadingBatches ? (
               <LoadingSpinner size="sm" className="text-cyan-600" />
             ) : (
-            <select
+            <CustomSelect
               value={selectedBatch}
-              onChange={(e)=>setSelectedBatch(e.target.value)}
-              className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">Select batch</option>
-              {batches.map(b => (
-                <option key={b._id} value={b.startYear}>{b.name || b.startYear}</option>
-              ))}
-            </select>
+              onChange={(e) => setSelectedBatch(e.target.value)}
+              placeholder="Select batch"
+              options={[
+                { value: '', label: 'Select batch' },
+                ...batches.map(b => ({
+                  value: b.startYear,
+                  label: b.name || b.startYear
+                }))
+              ]}
+              className="w-full sm:w-auto"
+            />
             )}
           </div>
           {loadingBatches ? (
@@ -553,17 +557,17 @@ export const DashboardPage = () => {
             </div>
             <form onSubmit={createSession} className="p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Course</label>
-                <select
-                  required
+                <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Course</label>
+                <CustomSelect
                   value={form.courseId}
                   onChange={(e) => setForm({ ...form, courseId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white"
-                >
-                  {courses.map((c) => (
-                    <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
-                  ))}
-                </select>
+                  placeholder="Select Course"
+                  options={courses.map((c) => ({
+                    value: c._id,
+                    label: `${c.code} - ${c.name}`
+                  }))}
+                  className="w-full"
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

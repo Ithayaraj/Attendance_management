@@ -59,9 +59,9 @@ export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose, onLo
 
   return (
     <>
-      {/* Mobile Sidebar - Slides in from left */}
+      {/* Mobile Sidebar - Slides in from left, narrower on mobile */}
       <aside
-        className={`fixed left-0 top-0 h-screen w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex-col z-40 transform transition-transform duration-300 ease-in-out md:hidden ${
+        className={`fixed left-0 top-0 h-screen w-[75%] max-w-[280px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex-col z-40 transform transition-transform duration-300 ease-in-out md:hidden ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -117,7 +117,7 @@ export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose, onLo
         </div>
       </aside>
 
-      {/* Desktop Sidebar - Fixed on left */}
+      {/* Desktop Sidebar - Fixed on left, fits to left side */}
       <aside className="hidden md:flex md:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex-col fixed left-0 top-0 h-screen z-20">
         <div className="p-6 border-b border-slate-200 dark:border-slate-700">
           <Logo />
@@ -130,20 +130,6 @@ export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose, onLo
             ))}
           </ul>
         </nav>
-
-        {/* Desktop Logout Button */}
-        {user && (
-          <div className="p-4 border-t border-slate-200 dark:border-slate-700 hidden md:block">
-            <button
-              onClick={onLogout}
-              disabled={logoutLoading}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <LogOut className="w-5 h-5" />
-              <span className="text-sm font-medium">Logout</span>
-            </button>
-          </div>
-        )}
 
         <div className="p-4 border-t border-slate-200 dark:border-slate-700">
           <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-slate-800 dark:to-slate-800 rounded-lg p-4 border border-cyan-200 dark:border-slate-700">

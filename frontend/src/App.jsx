@@ -217,7 +217,7 @@ function AppContent() {
         onRemove={removeNotification} 
       />
       
-    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-x-hidden">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div 
@@ -240,7 +240,7 @@ function AppContent() {
         user={user}
       />
 
-      <div className="flex-1 flex flex-col overflow-hidden md:ml-64">
+      <div className="flex-1 flex flex-col overflow-hidden md:ml-64 w-full">
         <Header 
           user={user} 
           onLogout={handleLogout} 
@@ -249,7 +249,7 @@ function AppContent() {
           onMenuClick={() => setSidebarOpen(!sidebarOpen)}
         />
 
-        <main className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6">
+        <main className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6 w-full max-w-full">
           {selectedStudent ? (
             <StudentDetailPage
               student={selectedStudent}

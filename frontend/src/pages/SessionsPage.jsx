@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Plus, RefreshCw, PlayCircle, XCircle, Edit, Trash2 } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { CustomSelect } from '../components/CustomSelect';
 
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
@@ -42,6 +43,78 @@ export const SessionsPage = () => {
     room: 'LAB-1',
     goLive: false
   });
+
+  const loadCourses = async () => {
+    try {
+      const res = await apiClient.get('/api/courses');
+      const list = res.data || [];
+      setCourses(list);
+      coursesLoadedRef.current = true;
+      
+      // Cache courses
+      sessionStorage.setItem('sessions_courses', JSON.stringify({
+        data: list,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Failed to load courses');
+    }
+  };
+
+  // Check if a session has ended (current time > endTime on session date)
+  const isSessionEnded = (session) => {
+    if (!session.date || !session.endTime) return false;
+    
+    const now = new Date();
+    const [endHour, endMinute] = session.endTime.split(':').map(Number);
+    const sessionEndDate = new Date(session.date);
+    sessionEndDate.setHours(endHour, endMinute, 0, 0);
+    
+    return now > sessionEndDate;
+  };
+
+  const loadSessions = useCallback(async (courseId) => {
+    try {
+      setLoading(true);
+      const res = await apiClient.get(`/api/courses/${courseId}/sessions`);
+      const sessionsData = res.data || [];
+      setSessions(sessionsData);
+      
+      // Cache sessions for this course
+      sessionStorage.setItem(`sessions_${courseId}`, JSON.stringify({
+        data: sessionsData,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Failed to load sessions');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Automatically close expired sessions
+  const checkAndCloseExpiredSessions = useCallback(async (sessionsList) => {
+    if (!selectedCourseId) return;
+    
+    const expiredSessions = sessionsList.filter(s => 
+      (s.status === 'live' || s.status === 'scheduled') && isSessionEnded(s)
+    );
+
+    if (expiredSessions.length > 0) {
+      // Update all expired sessions to closed
+      const updatePromises = expiredSessions.map(session =>
+        apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'closed' })
+          .catch(err => console.error(`Failed to close session ${session._id}:`, err))
+      );
+
+      await Promise.all(updatePromises);
+      
+      // Reload sessions after closing expired ones
+      await loadSessions(selectedCourseId);
+    }
+  }, [selectedCourseId, loadSessions]);
 
   useEffect(() => {
     // Check cache for courses
@@ -87,6 +160,9 @@ export const SessionsPage = () => {
           if (age < CACHE_DURATION) {
             setSessions(data);
             
+            // Check for expired sessions even from cache
+            checkAndCloseExpiredSessions(data);
+            
             // Refresh in background if older than 30 seconds
             if (age > 30 * 1000) {
               loadSessions(selectedCourseId);
@@ -98,47 +174,34 @@ export const SessionsPage = () => {
         }
       }
       
-      loadSessions(selectedCourseId);
+      loadSessions(selectedCourseId).then(() => {
+        // After loading, check for expired sessions
+        if (selectedCourseId) {
+          const cacheKey = `sessions_${selectedCourseId}`;
+          const cached = sessionStorage.getItem(cacheKey);
+          if (cached) {
+            try {
+              const { data } = JSON.parse(cached);
+              checkAndCloseExpiredSessions(data);
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      });
     }
-  }, [selectedCourseId]);
+  }, [selectedCourseId, loadSessions, checkAndCloseExpiredSessions]);
 
-  const loadCourses = async () => {
-    try {
-      const res = await apiClient.get('/api/courses');
-      const list = res.data || [];
-      setCourses(list);
-      coursesLoadedRef.current = true;
-      
-      // Cache courses
-      sessionStorage.setItem('sessions_courses', JSON.stringify({
-        data: list,
-        timestamp: Date.now()
-      }));
-    } catch (e) {
-      console.error(e);
-      alert(e.message || 'Failed to load courses');
-    }
-  };
+  // Periodically check for expired sessions (every minute)
+  useEffect(() => {
+    if (!selectedCourseId || sessions.length === 0) return;
 
-  const loadSessions = async (courseId) => {
-    try {
-      setLoading(true);
-      const res = await apiClient.get(`/api/courses/${courseId}/sessions`);
-      const sessionsData = res.data || [];
-      setSessions(sessionsData);
-      
-      // Cache sessions for this course
-      sessionStorage.setItem(`sessions_${courseId}`, JSON.stringify({
-        data: sessionsData,
-        timestamp: Date.now()
-      }));
-    } catch (e) {
-      console.error(e);
-      alert(e.message || 'Failed to load sessions');
-    } finally {
-      setLoading(false);
-    }
-  };
+    const interval = setInterval(() => {
+      checkAndCloseExpiredSessions(sessions);
+    }, 60 * 1000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [selectedCourseId, sessions, checkAndCloseExpiredSessions]);
 
   const createSession = async (e) => {
     e.preventDefault();
@@ -217,26 +280,29 @@ export const SessionsPage = () => {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
         <div>
-          <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Sessions</h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Manage class sessions and go live</p>
+          <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Sessions</h3>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Manage class sessions and go live</p>
         </div>
-        <div className="flex items-center gap-3">
-          <select
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          <CustomSelect
             value={selectedCourseId}
-            onChange={(e)=>setSelectedCourseId(e.target.value)}
-            className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-800 dark:text-white"
-          >
-            <option value="" disabled>Select the course</option>
-            {courses.map(c => (
-              <option key={c._id} value={c._id}>{c.code} - {c.name}</option>
-            ))}
-          </select>
-          <button onClick={()=>loadSessions(selectedCourseId)} disabled={!selectedCourseId} className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-            <RefreshCw className="w-4 h-4" /> Refresh
+            onChange={(e) => setSelectedCourseId(e.target.value)}
+            placeholder="Select the course"
+            options={[
+              { value: '', label: 'Select the course' },
+              ...courses.map(c => ({
+                value: c._id,
+                label: `${c.code} - ${c.name}`
+              }))
+            ]}
+            className="w-full sm:w-auto"
+          />
+          <button onClick={()=>loadSessions(selectedCourseId)} disabled={!selectedCourseId} className="w-full sm:w-auto px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm">
+            <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Refresh</span>
           </button>
-          <button onClick={()=>setShowCreate(true)} disabled={!selectedCourseId} className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+          <button onClick={()=>setShowCreate(true)} disabled={!selectedCourseId} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm">
             <Plus className="w-5 h-5" /> New Session
           </button>
         </div>
