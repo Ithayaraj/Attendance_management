@@ -62,3 +62,21 @@ Visit: `http://localhost:5173`
 ---
 
 **University of Vavuniya, Northern Province, Sri Lanka**
+---
+
+## Troubleshooting
+
+- If you encounter issues starting the backend, ensure MongoDB is running and accessible on the URI configured in your `.env`.
+- For errors during `npm run seed`, verify that your collections are empty and credentials in `.env` are correct.
+- If frontend changes don't appear, try clearing Vite's cache:
+  ```bash
+  rm -rf node_modules/.vite
+  npm run dev
+  ```
+- For "CORS" or API errors, check your backend server is running and that both frontend and backend use matching API URLs.
+
+## Support
+
+For further support:
+- Open an issue on the GitHub repository.
+
