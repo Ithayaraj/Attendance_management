@@ -5,6 +5,7 @@ import { broadcast } from '../realtime/ws.js';
 export const getCourseSessions = async (req, res, next) => {
   try {
     const sessions = await ClassSession.find({ courseId: req.params.courseId })
+      .populate('courseId', 'code name')
       .sort({ date: -1, startTime: -1 });
 
     res.json({
@@ -122,19 +123,68 @@ export const createSession = async (req, res, next) => {
       });
     }
 
-    // Check if there's already an active session (live or scheduled) for this year and semester on the same date
-    const existingActiveSession = await ClassSession.findOne({
+    // Check for time conflicts with other sessions for the same batch (year + semester)
+    // A batch can only have one session at a time - sessions cannot overlap
+    const batchTimeConflict = await ClassSession.findOne({
       year: year,
       semester: semester,
       date: date,
-      status: { $in: ['live', 'scheduled'] },
-      _id: { $ne: req.body.sessionId } // Exclude current session if updating
-    });
+      _id: { $ne: req.body.sessionId }, // Exclude current session if updating
+      $or: [
+        // New session starts during existing session
+        { $and: [
+          { startTime: { $lte: startTime } },
+          { endTime: { $gt: startTime } }
+        ]},
+        // New session ends during existing session
+        { $and: [
+          { startTime: { $lt: endTime } },
+          { endTime: { $gte: endTime } }
+        ]},
+        // New session completely contains existing session
+        { $and: [
+          { startTime: { $gte: startTime } },
+          { endTime: { $lte: endTime } }
+        ]}
+      ]
+    }).populate('courseId');
 
-    if (existingActiveSession) {
+    if (batchTimeConflict) {
       return res.status(400).json({
         success: false,
-        message: `An active session already exists for Year ${year}, Semester ${semester} on ${date}. Only one session can be active at a time for this batch.`
+        message: `Time conflict for Year ${year}, Semester ${semester} on ${date}. Another session (${batchTimeConflict.courseId.code}) is scheduled from ${batchTimeConflict.startTime} to ${batchTimeConflict.endTime}. Please schedule after ${batchTimeConflict.endTime}.`
+      });
+    }
+
+    // Check for room conflicts (same room, same date, overlapping time)
+    const roomConflict = await ClassSession.findOne({
+      room: room,
+      date: date,
+      status: { $in: ['live', 'scheduled'] },
+      _id: { $ne: req.body.sessionId },
+      $or: [
+        // New session starts during existing session
+        { $and: [
+          { startTime: { $lte: startTime } },
+          { endTime: { $gt: startTime } }
+        ]},
+        // New session ends during existing session
+        { $and: [
+          { startTime: { $lt: endTime } },
+          { endTime: { $gte: endTime } }
+        ]},
+        // New session completely contains existing session
+        { $and: [
+          { startTime: { $gte: startTime } },
+          { endTime: { $lte: endTime } }
+        ]}
+      ]
+    }).populate('courseId');
+
+    if (roomConflict) {
+      return res.status(400).json({
+        success: false,
+        message: `Room "${room}" is already booked on ${date} from ${roomConflict.startTime} to ${roomConflict.endTime} for ${roomConflict.courseId.code}. Please choose a different room or time.`
       });
     }
 

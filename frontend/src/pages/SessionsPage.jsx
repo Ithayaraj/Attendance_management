@@ -11,6 +11,7 @@ export const SessionsPage = () => {
   const [selectedFaculty, setSelectedFaculty] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
+  const [selectedSemester, setSelectedSemester] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -60,21 +61,21 @@ export const SessionsPage = () => {
     return facultyStructure[selectedFaculty].departments;
   }, [selectedFaculty]);
 
-  // Filter courses by selected department and year
+  // Filter courses by selected department, year, and semester
   const filteredCourses = useMemo(() => {
-    if (!selectedDepartment) return [];
+    if (!selectedDepartment || !selectedYear) return [];
     let filtered = courses.filter(c => c.department === selectedDepartment);
     
-    // Filter by year if selected
-    if (selectedYear) {
-      filtered = filtered.filter(c => {
-        const yearInfo = getYearSemesterFromCode(c.code);
-        return yearInfo?.year === Number(selectedYear);
-      });
+    // Filter by year (required)
+    filtered = filtered.filter(c => c.year === Number(selectedYear));
+    
+    // Filter by semester if selected (optional - empty means all semesters)
+    if (selectedSemester) {
+      filtered = filtered.filter(c => c.semester === Number(selectedSemester));
     }
     
     return filtered;
-  }, [courses, selectedDepartment, selectedYear]);
+  }, [courses, selectedDepartment, selectedYear, selectedSemester]);
   const roundToQuarter = (date) => {
     const d = new Date(date);
     const minutes = d.getMinutes();
@@ -185,6 +186,53 @@ export const SessionsPage = () => {
     }
   }, []);
 
+  const loadAllCourseSessions = useCallback(async () => {
+    if (filteredCourses.length === 0) {
+      setSessions([]);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Load sessions for all filtered courses
+      const allSessions = await Promise.all(
+        filteredCourses.map(async (course) => {
+          try {
+            const res = await apiClient.get(`/api/courses/${course._id}/sessions`);
+            const sessions = res.data || [];
+            // Ensure each session has courseId populated with at least code and name
+            return sessions.map(session => ({
+              ...session,
+              courseId: session.courseId || {
+                _id: course._id,
+                code: course.code,
+                name: course.name
+              }
+            }));
+          } catch (e) {
+            console.error(`Failed to load sessions for ${course.code}:`, e);
+            return [];
+          }
+        })
+      );
+      
+      // Flatten and sort by date (newest first), then by start time
+      const flatSessions = allSessions.flat().sort((a, b) => {
+        if (a.date !== b.date) {
+          return b.date.localeCompare(a.date);
+        }
+        return b.startTime.localeCompare(a.startTime);
+      });
+      
+      setSessions(flatSessions);
+    } catch (e) {
+      console.error('Failed to load sessions:', e);
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [filteredCourses]);
+
   // Automatically update session statuses (scheduled -> live -> closed)
   const checkAndUpdateSessionStatuses = useCallback(async (sessionsList) => {
     if (!selectedCourseId) return;
@@ -239,6 +287,7 @@ export const SessionsPage = () => {
         if (filters.faculty) setSelectedFaculty(filters.faculty);
         if (filters.department) setSelectedDepartment(filters.department);
         if (filters.year) setSelectedYear(filters.year);
+        if (filters.semester) setSelectedSemester(filters.semester);
         if (filters.courseId) setSelectedCourseId(filters.courseId);
         // Reset the flag after a short delay to allow state updates
         setTimeout(() => {
@@ -257,10 +306,11 @@ export const SessionsPage = () => {
       faculty: selectedFaculty,
       department: selectedDepartment,
       year: selectedYear,
+      semester: selectedSemester,
       courseId: selectedCourseId
     };
     sessionStorage.setItem('sessions_filters', JSON.stringify(filters));
-  }, [selectedFaculty, selectedDepartment, selectedYear, selectedCourseId]);
+  }, [selectedFaculty, selectedDepartment, selectedYear, selectedSemester, selectedCourseId]);
 
   useEffect(() => {
     // Check cache for courses
@@ -292,58 +342,63 @@ export const SessionsPage = () => {
     }
   }, []);
 
-  // Reset course when department or year changes (but not during restoration)
+  // Reset course when department, year, or semester changes (but not during restoration)
   useEffect(() => {
     if (isRestoringRef.current) return; // Don't reset during restoration
     setSelectedCourseId('');
     setSessions([]);
-  }, [selectedDepartment, selectedYear]);
+  }, [selectedDepartment, selectedYear, selectedSemester]);
 
   useEffect(() => {
-    if (selectedCourseId) {
-      // Check cache for sessions
-      const cacheKey = `sessions_${selectedCourseId}`;
-      const cached = sessionStorage.getItem(cacheKey);
-      
-      if (cached) {
-        try {
-          const { data, timestamp } = JSON.parse(cached);
-          const age = Date.now() - timestamp;
-          
-          if (age < CACHE_DURATION) {
-            setSessions(data);
+    if (selectedYear && selectedDepartment) {
+      // If no specific course selected, load sessions for all filtered courses
+      if (!selectedCourseId && filteredCourses.length > 0) {
+        loadAllCourseSessions();
+      } else if (selectedCourseId) {
+        // Check cache for sessions
+        const cacheKey = `sessions_${selectedCourseId}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        
+        if (cached) {
+          try {
+            const { data, timestamp } = JSON.parse(cached);
+            const age = Date.now() - timestamp;
             
-            // Check and update session statuses even from cache
-            checkAndUpdateSessionStatuses(data);
-            
-            // Refresh in background if older than 30 seconds
-            if (age > 30 * 1000) {
-              loadSessions(selectedCourseId);
-            }
-            return;
-          }
-        } catch (e) {
-          console.error('Cache error:', e);
-        }
-      }
-      
-      loadSessions(selectedCourseId).then(() => {
-        // After loading, check and update session statuses
-        if (selectedCourseId) {
-          const cacheKey = `sessions_${selectedCourseId}`;
-          const cached = sessionStorage.getItem(cacheKey);
-          if (cached) {
-            try {
-              const { data } = JSON.parse(cached);
+            if (age < CACHE_DURATION) {
+              setSessions(data);
+              
+              // Check and update session statuses even from cache
               checkAndUpdateSessionStatuses(data);
-            } catch (e) {
-              // ignore
+              
+              // Refresh in background if older than 30 seconds
+              if (age > 30 * 1000) {
+                loadSessions(selectedCourseId);
+              }
+              return;
             }
+          } catch (e) {
+            console.error('Cache error:', e);
           }
         }
-      });
+        
+        loadSessions(selectedCourseId).then(() => {
+          // After loading, check and update session statuses
+          if (selectedCourseId) {
+            const cacheKey = `sessions_${selectedCourseId}`;
+            const cached = sessionStorage.getItem(cacheKey);
+            if (cached) {
+              try {
+                const { data } = JSON.parse(cached);
+                checkAndUpdateSessionStatuses(data);
+              } catch (e) {
+                // ignore
+              }
+            }
+          }
+        });
+      }
     }
-  }, [selectedCourseId, loadSessions, checkAndUpdateSessionStatuses]);
+  }, [selectedCourseId, selectedYear, selectedDepartment, filteredCourses, loadSessions, loadAllCourseSessions, checkAndUpdateSessionStatuses]);
 
   // Periodically check and update session statuses (every minute)
   useEffect(() => {
@@ -441,7 +496,7 @@ export const SessionsPage = () => {
         
         {/* Filter Section */}
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
             {/* Faculty Selection */}
             <div className="flex flex-col gap-1.5 min-w-0">
               <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Faculty</label>
@@ -496,13 +551,33 @@ export const SessionsPage = () => {
                   setSelectedCourseId('');
                 }}
                 disabled={!selectedDepartment}
-                placeholder={selectedDepartment ? 'All Years' : 'Select Department first'}
+                placeholder={selectedDepartment ? 'Select Year' : 'Select Department first'}
                 options={[
-                  { value: '', label: selectedDepartment ? 'All Years' : 'Select Department first' },
+                  { value: '', label: selectedDepartment ? 'Select Year' : 'Select Department first' },
                   ...([1, 2, 3, 4].map(y => ({
                     value: String(y),
                     label: `Year ${y}`
                   })))
+                ]}
+                className="w-full min-w-0"
+              />
+            </div>
+
+            {/* Semester Selection */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Semester</label>
+              <CustomSelect
+                value={selectedSemester}
+                onChange={(e) => {
+                  setSelectedSemester(e.target.value);
+                  setSelectedCourseId('');
+                }}
+                disabled={!selectedYear}
+                placeholder={selectedYear ? 'All Semesters' : 'Select Year first'}
+                options={[
+                  { value: '', label: selectedYear ? 'All Semesters' : 'Select Year first' },
+                  { value: '1', label: 'Semester 1' },
+                  { value: '2', label: 'Semester 2' }
                 ]}
                 className="w-full min-w-0"
               />
@@ -514,10 +589,10 @@ export const SessionsPage = () => {
               <CustomSelect
                 value={selectedCourseId}
                 onChange={(e) => setSelectedCourseId(e.target.value)}
-                disabled={!selectedDepartment}
-                placeholder={selectedDepartment ? 'Select Course' : 'Select Department first'}
+                disabled={!selectedYear}
+                placeholder={selectedYear ? 'All Courses' : 'Select Year first'}
                 options={[
-                  { value: '', label: selectedDepartment ? 'Select Course' : 'Select Department first' },
+                  { value: '', label: selectedYear ? 'All Courses' : 'Select Year first' },
                   ...filteredCourses.map(c => ({
                     value: c._id,
                     label: `${c.code} - ${c.name}`
@@ -531,8 +606,8 @@ export const SessionsPage = () => {
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
             <button 
-              onClick={()=>loadSessions(selectedCourseId)} 
-              disabled={!selectedCourseId} 
+              onClick={() => selectedCourseId ? loadSessions(selectedCourseId) : loadAllCourseSessions()} 
+              disabled={!selectedYear || !selectedDepartment} 
               className="w-full sm:w-auto px-3 sm:px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               <RefreshCw className="w-4 h-4" /> 
@@ -571,14 +646,16 @@ export const SessionsPage = () => {
       )}
 
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-        {!selectedCourseId ? (
+        {!selectedYear || !selectedDepartment ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400">
             {!selectedFaculty ? (
-              <p>Please select Faculty, Department, Year (optional), and Course to view sessions</p>
+              <p>Please select Faculty, Department, and Year to view sessions</p>
             ) : !selectedDepartment ? (
-              <p>Please select Department, Year (optional), and Course to view sessions</p>
+              <p>Please select Department and Year to view sessions</p>
+            ) : !selectedYear ? (
+              <p>Please select Year to view sessions</p>
             ) : (
-              <p>Please select a Course to view sessions</p>
+              <p>Please select filters to view sessions</p>
             )}
           </div>
         ) : (
@@ -586,6 +663,7 @@ export const SessionsPage = () => {
             <table className="w-full">
               <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                 <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Course</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Date</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Time</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Room</th>
@@ -597,7 +675,7 @@ export const SessionsPage = () => {
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center">
+                    <td colSpan="7" className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <LoadingSpinner size="lg" className="text-cyan-600" />
                         <span className="text-slate-500 dark:text-slate-400">Loading sessions...</span>
@@ -605,10 +683,13 @@ export const SessionsPage = () => {
                     </td>
                   </tr>
                 ) : sessions.length === 0 ? (
-                  <tr><td colSpan="6" className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
+                  <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
                 ) : (
                   sessions.map(s => (
                     <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">
+                        {s.courseId?.code || 'N/A'}
+                      </td>
                       <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{s.date}</td>
                       <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{s.startTime} - {s.endTime}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{s.room}</td>
@@ -666,16 +747,18 @@ export const SessionsPage = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
-                  <input type="time" required value={form.startTime} onChange={(e)=>{
-                    const value = e.target.value;
-                    const [h, m] = value.split(':').map(Number);
-                    const d = new Date();
-                    d.setHours(h || 0, m || 0, 0, 0);
-                    const rounded = roundToQuarter(d);
-                    const start = toTimeString(rounded);
-                    const end = addMinutesLocal(start, 60);
-                    setForm({...form, startTime:start, endTime:end});
-                  }} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <input 
+                    type="time" 
+                    required 
+                    value={form.startTime} 
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Calculate end time as 1 hour after start time
+                      const end = value ? addMinutesLocal(value, 60) : '';
+                      setForm({...form, startTime: value, endTime: end});
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
@@ -716,7 +799,13 @@ export const SessionsPage = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
-                  <input type="time" required value={form.startTime} onChange={(e)=>setForm({...form, startTime:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <input 
+                    type="time" 
+                    required 
+                    value={form.startTime} 
+                    onChange={(e) => setForm({...form, startTime: e.target.value})} 
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
