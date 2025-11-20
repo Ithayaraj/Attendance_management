@@ -114,32 +114,21 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
     throw new Error(`Multiple sessions live for Y${studentYear}S${studentSemester}: ${courseCodes}. Contact admin`);
   }
 
-  // Step 3: Get all course IDs from active sessions
-  const courseIds = activeSessions.map(s => s.courseId._id);
-
-  // Find all enrollments for this student in these courses
-  // This checks if the student is registered for any of the active courses
-  const enrollments = await Enrollment.find({
-    courseId: { $in: courseIds },
-    studentId: student._id,
-    status: 'active'
-  });
-
-  // Step 4: Find the session for which the student is enrolled
-  // This ensures the student is registered for the course before marking attendance
-  const enrolledCourseIds = new Set(enrollments.map(e => String(e.courseId)));
-  console.log(`Student enrolled in ${enrollments.length} courses from active sessions`);
-  
-  const session = activeSessions.find(s => enrolledCourseIds.has(String(s.courseId._id)));
+  // Step 3: Select the active session for the student's batch
+  // Since enrollment check is disabled, any student from the correct batch can attend
+  // If multiple sessions are active, prefer live sessions over scheduled
+  const session = liveSessions.length > 0 ? liveSessions[0] : activeSessions[0];
 
   if (!session) {
     const courseCodes = activeSessions.map(s => s.courseId.code).join(', ');
-    throw new Error(`Not enrolled! Active courses for Y${studentYear}S${studentSemester}: ${courseCodes}`);
+    throw new Error(`No active session found for Y${studentYear}S${studentSemester}`);
   }
 
-  console.log(`Selected session: ${session.courseId.code} (Y${session.year}S${session.semester})`);
+  console.log(`Selected session: ${session.courseId.code} (no enrollment check)`);
+  
+  // Note: Enrollment check is disabled. All students from the correct batch can attend.
 
-  // Step 4.1: Double-check session matches student's batch (redundant safety check)
+  // Step 4: Double-check session matches student's batch (redundant safety check)
   const sessionYear = Number(session.year);
   const sessionSemester = Number(session.semester);
   
