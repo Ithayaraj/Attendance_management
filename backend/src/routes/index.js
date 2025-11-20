@@ -29,6 +29,7 @@ router.post('/auth/logout', authController.logout);
 router.get('/students', requireAuth, studentsController.getStudents);
 router.get('/students/:id', requireAuth, studentsController.getStudent);
 router.post('/students', requireAuth, requireRole(['admin']), studentsController.createStudent);
+router.put('/students/bulk-update', requireAuth, requireRole(['admin']), studentsController.bulkUpdateStudents);
 router.put('/students/:id', requireAuth, requireRole(['admin']), studentsController.updateStudent);
 router.delete('/students/:id', requireAuth, requireRole(['admin']), studentsController.deleteStudent);
 

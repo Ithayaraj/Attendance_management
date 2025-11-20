@@ -12,7 +12,9 @@ import { SessionsPage } from './pages/SessionsPage';
 import { StudentsPage } from './pages/StudentsPage';
 import { BatchesPage } from './pages/BatchesPage';
 import { StudentDetailPage } from './pages/StudentDetailPage';
-import { Activity } from 'lucide-react';
+import { AnalyticsPage } from './pages/AnalyticsPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { Activity, Eye, EyeOff } from 'lucide-react';
 import { PageLoader, ButtonSpinner } from './components/LoadingSpinner';
 
 function AppContent() {
@@ -32,12 +34,13 @@ function AppContent() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const lastScanIdRef = useRef(null);
 
   // Sync URL with current page (only when user is logged in)
   useEffect(() => {
     if (user) {
-      const path = currentPage === 'dashboard' ? '/' : `/${currentPage}`;
+      const path = currentPage === 'dashboard' ? '/dashboard' : `/${currentPage}`;
       window.history.pushState({ page: currentPage }, '', path);
     }
   }, [currentPage, user]);
@@ -65,41 +68,41 @@ function AppContent() {
     setSelectedStudent(null);
     window.history.pushState({}, '', '/');
   };
-  
+
   // Show notification when scan is received with detailed attendance information
   useEffect(() => {
     if (!user) {
       console.log('No user, skipping notification');
       return; // Don't show notifications if not logged in
     }
-    
+
     if (!connected) {
       console.log('WebSocket not connected, skipping notification');
       return;
     }
-    
+
     console.log('=== SCAN NOTIFICATION EFFECT TRIGGERED ===');
     console.log('lastScan:', lastScan);
     console.log('lastScan type:', lastScan?.type);
     console.log('user:', user?.name);
     console.log('WebSocket connected:', connected);
     console.log('showNotification function:', typeof showNotification);
-    
+
     if (lastScan && lastScan.type) {
       // Create unique ID from scan data to prevent duplicates
       const scanId = `${lastScan.type}_${lastScan.registrationNo || 'unknown'}_${lastScan.checkInAt || Date.now()}`;
-      
+
       console.log('Generated Scan ID:', scanId);
       console.log('Last scan ID ref:', lastScanIdRef.current);
-      
+
       if (scanId !== lastScanIdRef.current) {
         lastScanIdRef.current = scanId;
         console.log('=== PROCESSING NEW SCAN FOR NOTIFICATION ===');
         console.log('Full scan data:', JSON.stringify(lastScan, null, 2));
-        
+
         const scanType = lastScan.type;
         console.log('Scan type:', scanType);
-        
+
         // Use setTimeout to ensure state is ready
         setTimeout(() => {
           // Immediately show notification (no setTimeout needed)
@@ -110,11 +113,11 @@ function AppContent() {
             console.log('=== SHOWING ERROR NOTIFICATION ===');
             console.log('Error message:', errorMsg);
             console.log('Scanned ID:', registrationNo);
-            
-            const errorMessage = registrationNo !== 'N/A' 
+
+            const errorMessage = registrationNo !== 'N/A'
               ? `📋 Scanned ID: ${registrationNo}\n❌ ${errorMsg}`
               : `❌ ${errorMsg}`;
-            
+
             showNotification({
               type: 'error',
               title: '❌ Scan Error',
@@ -128,10 +131,10 @@ function AppContent() {
             const studentName = lastScan.studentName || 'Unknown';
             const registrationNo = lastScan.registrationNo || 'N/A';
             const courseCode = lastScan.courseCode || 'N/A';
-            
+
             console.log('=== SHOWING DUPLICATE NOTIFICATION ===');
             console.log('Data:', { studentName, registrationNo, courseCode, status });
-            
+
             // Create message with scanned ID prominently displayed first
             const message = `📋 Scanned ID: ${registrationNo}\n👤 ${studentName}\n📚 ${courseCode}\n⚠️ Status: ${statusLabel} (Already Entered)`;
             showNotification({
@@ -147,44 +150,44 @@ function AppContent() {
             const studentName = lastScan.studentName || 'Unknown';
             const registrationNo = lastScan.registrationNo || 'N/A';
             const courseCode = lastScan.courseCode || 'N/A';
-            
+
             // Format check-in time
             let checkInTime = '';
             if (lastScan.checkInAt) {
               try {
                 const checkInDate = new Date(lastScan.checkInAt);
-                checkInTime = checkInDate.toLocaleTimeString('en-US', { 
-                  hour: '2-digit', 
+                checkInTime = checkInDate.toLocaleTimeString('en-US', {
+                  hour: '2-digit',
                   minute: '2-digit',
-                  hour12: true 
+                  hour12: true
                 });
               } catch (e) {
                 console.error('Error formatting time:', e);
               }
             }
-            
+
             console.log('=== SHOWING ATTENDANCE NOTIFICATION ===');
             console.log('Data:', { studentName, registrationNo, courseCode, status, checkInTime });
-            
+
             // Create detailed message with scanned ID prominently displayed first
-            const detailedMessage = checkInTime 
+            const detailedMessage = checkInTime
               ? `📋 Scanned ID: ${registrationNo}\n👤 ${studentName}\n📚 ${courseCode}\n⏰ Check-in: ${checkInTime}\n✅ Status: ${statusLabel}`
               : `📋 Scanned ID: ${registrationNo}\n👤 ${studentName}\n📚 ${courseCode}\n✅ Status: ${statusLabel}`;
-            
+
             console.log('Notification details:', {
               type: 'success',
               title: `✅ ID Scanned - Attendance Recorded`,
               message: detailedMessage,
               duration: 8000
             });
-            
+
             const notificationId = showNotification({
               type: 'success',
               title: `✅ ID Scanned - Attendance Recorded`,
               message: detailedMessage,
               duration: 8000,
             });
-            
+
             console.log('Notification ID returned:', notificationId);
             console.log('Notification should be visible now');
           } else {
@@ -245,14 +248,28 @@ function AppContent() {
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 Password
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-900 dark:text-white transition-all"
-                placeholder="••••••••"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 pr-12 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-900 dark:text-white transition-all"
+                  placeholder="••••••••"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-500 transition-colors"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {loginError && (
@@ -292,80 +309,83 @@ function AppContent() {
   return (
     <>
       {/* Notification Container - Outside main layout for proper z-index */}
-      <NotificationContainer 
-        notifications={notifications} 
-        onRemove={removeNotification} 
+      <NotificationContainer
+        notifications={notifications}
+        onRemove={removeNotification}
       />
-      
+
       {/* WebSocket Connection Status Indicator */}
       {user && (
-        <div 
-          className={`fixed bottom-4 right-4 z-[9998] px-3 py-2 rounded-lg shadow-lg text-xs font-medium ${
-            connected 
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700' 
+        <div
+          className={`fixed bottom-4 right-4 z-[9998] px-3 py-2 rounded-lg shadow-lg text-xs font-medium ${connected
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
               : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700'
-          }`}
+            }`}
         >
           {connected ? '🟢 Connected' : '🔴 Disconnected'}
         </div>
       )}
-      
-    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-x-hidden">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
 
-      <Sidebar 
-        currentPage={currentPage} 
-        onNavigate={(page) => {
-        setCurrentPage(page);
-        setSelectedStudent(null);
-          setSidebarOpen(false); // Close sidebar on mobile after navigation
-        }}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onLogout={handleLogout}
-        logoutLoading={logoutLoading}
-        user={user}
-      />
+      <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-x-hidden">
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-30 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-      <div className="flex-1 flex flex-col overflow-hidden md:ml-64 w-full">
-        <Header 
-          user={user} 
-          onLogout={handleLogout} 
-          title={getPageTitle()} 
+        <Sidebar
+          currentPage={currentPage}
+          onNavigate={(page) => {
+            setCurrentPage(page);
+            setSelectedStudent(null);
+            setSidebarOpen(false); // Close sidebar on mobile after navigation
+          }}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onLogout={handleLogout}
           logoutLoading={logoutLoading}
-          onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+          user={user}
         />
 
-        <main className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6 w-full max-w-full">
-          {selectedStudent ? (
-            <StudentDetailPage
-              student={selectedStudent}
-              onBack={() => setSelectedStudent(null)}
-            />
-          ) : currentPage === 'dashboard' ? (
-            <DashboardPage />
-          ) : currentPage === 'students' ? (
-            <StudentsPage onViewStudent={setSelectedStudent} />
-          ) : currentPage === 'courses' ? (
-            <CoursesPage />
-          ) : currentPage === 'sessions' ? (
-            <SessionsPage />
-          ) : currentPage === 'batches' ? (
-            <BatchesPage />
-          ) : (
-            <div className="py-10 text-center text-slate-600 dark:text-slate-400">
-              {currentPage.charAt(0).toUpperCase() + currentPage.slice(1)} page - Coming soon
-            </div>
-          )}
-        </main>
+        <div className="flex-1 flex flex-col overflow-hidden md:ml-64 w-full">
+          <Header
+            user={user}
+            onLogout={handleLogout}
+            title={getPageTitle()}
+            logoutLoading={logoutLoading}
+            onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+          />
+
+          <main className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6 w-full max-w-full">
+            {selectedStudent ? (
+              <StudentDetailPage
+                student={selectedStudent}
+                onBack={() => setSelectedStudent(null)}
+              />
+            ) : currentPage === 'dashboard' ? (
+              <DashboardPage />
+            ) : currentPage === 'students' ? (
+              <StudentsPage onViewStudent={setSelectedStudent} />
+            ) : currentPage === 'courses' ? (
+              <CoursesPage />
+            ) : currentPage === 'sessions' ? (
+              <SessionsPage />
+            ) : currentPage === 'batches' ? (
+              <BatchesPage />
+            ) : currentPage === 'analytics' ? (
+              <AnalyticsPage />
+            ) : currentPage === 'settings' ? (
+              <SettingsPage />
+            ) : (
+              <div className="py-10 text-center text-slate-600 dark:text-slate-400">
+                {currentPage.charAt(0).toUpperCase() + currentPage.slice(1)} page - Coming soon
+              </div>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
     </>
   );
 }
@@ -374,7 +394,7 @@ function App() {
   return (
     <ThemeProvider>
       <NotificationProvider>
-      <AppContent />
+        <AppContent />
       </NotificationProvider>
     </ThemeProvider>
   );

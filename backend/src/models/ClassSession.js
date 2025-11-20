@@ -23,6 +23,18 @@ const classSessionSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  year: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 4
+  },
+  semester: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 2
+  },
   status: {
     type: String,
     enum: ['scheduled', 'live', 'closed'],
@@ -34,5 +46,6 @@ const classSessionSchema = new mongoose.Schema({
 
 classSessionSchema.index({ courseId: 1, date: 1 });
 classSessionSchema.index({ status: 1, date: 1 });
+classSessionSchema.index({ year: 1, semester: 1, status: 1 });
 
 export const ClassSession = mongoose.model('ClassSession', classSessionSchema);

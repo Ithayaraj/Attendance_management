@@ -22,10 +22,17 @@ const courseSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  semester: {
-    type: String,
+  year: {
+    type: Number,
     required: true,
-    trim: true
+    min: 1,
+    max: 4
+  },
+  semester: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 2
   }
 }, {
   timestamps: true

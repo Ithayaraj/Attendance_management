@@ -180,3 +180,58 @@ export const deleteStudent = async (req, res, next) => {
     next(error);
   }
 };
+
+export const bulkUpdateStudents = async (req, res, next) => {
+  try {
+    const { studentIds, updateData } = req.body;
+
+    if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'studentIds array is required'
+      });
+    }
+
+    if (!updateData || Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'updateData is required'
+      });
+    }
+
+    // Only allow updating year and semester
+    const allowedFields = ['year', 'semester'];
+    const filteredUpdateData = {};
+    
+    for (const field of allowedFields) {
+      if (updateData[field] !== undefined) {
+        filteredUpdateData[field] = updateData[field];
+      }
+    }
+
+    if (Object.keys(filteredUpdateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid fields to update (only year and semester are allowed)'
+      });
+    }
+
+    // Perform bulk update
+    const result = await Student.updateMany(
+      { _id: { $in: studentIds } },
+      { $set: filteredUpdateData }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount
+      },
+      message: `Successfully updated ${result.modifiedCount} student(s)`
+    });
+  } catch (error) {
+    console.error('Error in bulkUpdateStudents:', error);
+    next(error);
+  }
+};

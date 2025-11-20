@@ -315,12 +315,12 @@ export const DashboardPage = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+          {/* <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
             <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
               {connected ? 'Live' : 'Disconnected'}
             </span>
-          </div>
+          </div> */}
           <button
             onClick={() => setShowCreateSession(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium"

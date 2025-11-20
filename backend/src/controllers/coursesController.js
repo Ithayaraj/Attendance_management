@@ -4,7 +4,14 @@ const deriveSemesterFromCode = (code) => {
   if (!code || typeof code !== 'string') return null;
   const match = code.match(/^[A-Za-z]+(\d)(\d)/);
   if (!match) return null;
-  return String(match[2]);
+  return parseInt(match[2], 10);
+};
+
+const deriveYearFromCode = (code) => {
+  if (!code || typeof code !== 'string') return null;
+  const match = code.match(/^[A-Za-z]+(\d)(\d)/);
+  if (!match) return null;
+  return parseInt(match[1], 10);
 };
 
 export const getCourses = async (req, res, next) => {
@@ -45,12 +52,19 @@ export const getCourse = async (req, res, next) => {
 
 export const createCourse = async (req, res, next) => {
   try {
-    if (!req.body.semester) {
+    if (!req.body.semester && req.body.code) {
       const derived = deriveSemesterFromCode(req.body.code);
-      if (!derived) {
+      if (derived === null) {
         return res.status(400).json({ success: false, message: 'Invalid course code format. Cannot derive semester.' });
       }
       req.body.semester = derived;
+    }
+    if (!req.body.year && req.body.code) {
+      const derived = deriveYearFromCode(req.body.code);
+      if (derived === null) {
+        return res.status(400).json({ success: false, message: 'Invalid course code format. Cannot derive year.' });
+      }
+      req.body.year = derived;
     }
     const course = await Course.create(req.body);
     await course.populate('instructorId', 'name email');
@@ -68,8 +82,14 @@ export const updateCourse = async (req, res, next) => {
   try {
     if (!req.body.semester && req.body.code) {
       const derived = deriveSemesterFromCode(req.body.code);
-      if (derived) {
+      if (derived !== null) {
         req.body.semester = derived;
+      }
+    }
+    if (!req.body.year && req.body.code) {
+      const derived = deriveYearFromCode(req.body.code);
+      if (derived !== null) {
+        req.body.year = derived;
       }
     }
     const course = await Course.findByIdAndUpdate(

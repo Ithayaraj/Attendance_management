@@ -2,10 +2,11 @@ export const errorHandler = (err, req, res, next) => {
   console.error('Error:', err);
 
   if (err.name === 'ValidationError') {
+    const errors = Object.values(err.errors).map(e => e.message);
     return res.status(400).json({
       success: false,
-      message: 'Validation error',
-      errors: Object.values(err.errors).map(e => e.message)
+      message: errors.length > 0 ? errors[0] : 'Validation error',
+      errors: errors
     });
   }
 

@@ -40,7 +40,8 @@ export const ingestScan = async (req, res, next) => {
         sessionId: result.session.id,
         courseCode: result.session.courseCode,
         status: result.attendanceRecord.status,
-        checkInAt: result.attendanceRecord.checkInAt
+        checkInAt: result.attendanceRecord.checkInAt,
+        message: result.message
       }
     };
 
@@ -49,12 +50,14 @@ export const ingestScan = async (req, res, next) => {
 
     res.json({
       success: true,
+      message: result.message,
       data: {
         student: result.student,
         session: result.session,
         status: result.attendanceRecord.status,
         checkInAt: result.attendanceRecord.checkInAt,
-        duplicate: result.alreadyCheckedIn
+        duplicate: result.alreadyCheckedIn,
+        message: result.message
       }
     });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Eye, Edit, Trash2, Download } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, Download, Users, Upload, FileSpreadsheet } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { CustomSelect } from '../components/CustomSelect';
@@ -12,6 +12,13 @@ export const StudentsPage = ({ onViewStudent }) => {
   const [loading, setLoading] = useState(false);
   const [batches, setBatches] = useState([]);
   const [loadingBatches, setLoadingBatches] = useState(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [bulkEditData, setBulkEditData] = useState({ year: '', semester: '' });
+  const [bulkEditLoading, setBulkEditLoading] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResults, setImportResults] = useState(null);
 
   const [formData, setFormData] = useState({
     registrationNo: '',
@@ -315,6 +322,207 @@ export const StudentsPage = ({ onViewStudent }) => {
     }
   };
 
+  const handleBulkEdit = async (e) => {
+    e.preventDefault();
+    
+    if (!bulkEditData.year && !bulkEditData.semester) {
+      alert('Please select at least Year or Semester to update');
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to update ${students.length} student(s)?\n\n` +
+      (bulkEditData.year ? `Year will be set to: ${bulkEditData.year}\n` : '') +
+      (bulkEditData.semester ? `Semester will be set to: ${bulkEditData.semester}` : '');
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      setBulkEditLoading(true);
+      
+      // Prepare update data
+      const updateData = {};
+      if (bulkEditData.year) updateData.year = parseInt(bulkEditData.year);
+      if (bulkEditData.semester) updateData.semester = parseInt(bulkEditData.semester);
+
+      // Get all student IDs from filtered list
+      const studentIds = students.map(s => s._id);
+
+      // Call bulk update API
+      await apiClient.put('/api/students/bulk-update', {
+        studentIds,
+        updateData
+      });
+
+      alert(`Successfully updated ${students.length} student(s)!`);
+      setShowBulkEditModal(false);
+      setBulkEditData({ year: '', semester: '' });
+      
+      // Clear cache and reload
+      const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}`;
+      sessionStorage.removeItem(cacheKey);
+      await reloadStudents();
+    } catch (error) {
+      alert('Error updating students: ' + error.message);
+    } finally {
+      setBulkEditLoading(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (students.length === 0) {
+      alert('No students to export');
+      return;
+    }
+
+    // Create CSV content
+    const headers = ['registrationNo', 'name', 'email', 'department', 'year', 'semester', 'phone', 'address'];
+    const csvContent = [
+      headers.join(','),
+      ...students.map(student => 
+        headers.map(header => {
+          const value = student[header] || '';
+          // Escape commas and quotes in values
+          return `"${String(value).replace(/"/g, '""')}"`;
+        }).join(',')
+      )
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `students_${selectedBatchYear}_${selectedDepartment}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportCSV = async (e) => {
+    e.preventDefault();
+    
+    if (!importFile) {
+      alert('Please select a file');
+      return;
+    }
+
+    if (!selectedBatchYear || !selectedFaculty || !selectedDepartment) {
+      alert('Please select Batch, Faculty, and Department first');
+      return;
+    }
+
+    try {
+      setImportLoading(true);
+      setImportResults(null);
+
+      const text = await importFile.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        alert('CSV file is empty or invalid');
+        return;
+      }
+
+      // Parse CSV
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const requiredHeaders = ['registrationNo', 'name', 'email', 'department', 'year', 'semester'];
+      
+      // Validate headers
+      const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+      if (missingHeaders.length > 0) {
+        alert(`Missing required columns: ${missingHeaders.join(', ')}`);
+        return;
+      }
+
+      const studentsToImport = [];
+      const errors = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Parse CSV line (handle quoted values)
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            values.push(current.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        values.push(current.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+        const student = {};
+        headers.forEach((header, index) => {
+          student[header] = values[index] || '';
+        });
+
+        // Validate required fields
+        const missing = requiredHeaders.filter(h => !student[h]);
+        if (missing.length > 0) {
+          errors.push(`Line ${i + 1}: Missing ${missing.join(', ')}`);
+          continue;
+        }
+
+        // Convert year and semester to numbers
+        student.year = parseInt(student.year);
+        student.semester = parseInt(student.semester);
+
+        if (isNaN(student.year) || isNaN(student.semester)) {
+          errors.push(`Line ${i + 1}: Invalid year or semester`);
+          continue;
+        }
+
+        studentsToImport.push(student);
+      }
+
+      if (studentsToImport.length === 0) {
+        alert('No valid students found in CSV file');
+        setImportResults({ success: 0, failed: errors.length, errors });
+        return;
+      }
+
+      // Import students
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const student of studentsToImport) {
+        try {
+          await apiClient.post('/api/students', student);
+          successCount++;
+        } catch (error) {
+          failCount++;
+          errors.push(`${student.registrationNo}: ${error.message}`);
+        }
+      }
+
+      setImportResults({
+        success: successCount,
+        failed: failCount,
+        errors: errors.slice(0, 10) // Show first 10 errors
+      });
+
+      if (successCount > 0) {
+        // Clear cache and reload
+        const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}`;
+        sessionStorage.removeItem(cacheKey);
+        await reloadStudents();
+      }
+
+    } catch (error) {
+      alert('Error importing CSV: ' + error.message);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -322,31 +530,73 @@ export const StudentsPage = ({ onViewStudent }) => {
           <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Student Management</h3>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Manage student records and information</p>
         </div>
-        <button
-          onClick={() => {
-            if (!selectedBatchYear) return alert('Please select a batch first');
-            if (!selectedFaculty) return alert('Please select a faculty first');
-            if (!selectedDepartment) return alert('Please select a department first');
-            setEditingStudent(null);
-            setFormData({
-              registrationNo: '',
-              name: '',
-              email: '',
-              department: selectedDepartment,
-              year: 1,
-              semester: 1,
-              phone: '',
-              address: ''
-            });
-            setRegSuffix('');
-            setShowAddModal(true);
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium ${(!selectedBatchYear || !selectedFaculty || !selectedDepartment) ? 'opacity-50 cursor-not-allowed' : ''}`}
-          disabled={!selectedBatchYear || !selectedFaculty || !selectedDepartment}
-        >
-          <Plus className="w-5 h-5" />
-          Add Student
-        </button>
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {selectedBatchYear && selectedFaculty && selectedDepartment && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setImportFile(null);
+                  setImportResults(null);
+                  setShowImportModal(true);
+                }}
+                className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
+                title="Import from CSV"
+              >
+                <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden sm:inline">Import</span>
+              </button>
+              {students.length > 0 && (
+                <button
+                  onClick={handleExportCSV}
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
+                  title="Export to CSV"
+                >
+                  <Download className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+              )}
+            </div>
+          )}
+          {selectedBatchYear && selectedFaculty && selectedDepartment && students.length > 0 && (
+            <button
+              onClick={() => {
+                setBulkEditData({ year: '', semester: '' });
+                setShowBulkEditModal(true);
+              }}
+              className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
+            >
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Bulk Edit</span>
+              <span className="sm:hidden">Edit All</span>
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (!selectedBatchYear) return alert('Please select a batch first');
+              if (!selectedFaculty) return alert('Please select a faculty first');
+              if (!selectedDepartment) return alert('Please select a department first');
+              setEditingStudent(null);
+              setFormData({
+                registrationNo: '',
+                name: '',
+                email: '',
+                department: selectedDepartment,
+                year: 1,
+                semester: 1,
+                phone: '',
+                address: ''
+              });
+              setRegSuffix('');
+              setShowAddModal(true);
+            }}
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base ${(!selectedBatchYear || !selectedFaculty || !selectedDepartment) ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!selectedBatchYear || !selectedFaculty || !selectedDepartment}
+          >
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Add Student</span>
+            <span className="sm:hidden">Add</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-3 sm:p-4 mb-4 sm:mb-6">
@@ -531,6 +781,169 @@ export const StudentsPage = ({ onViewStudent }) => {
           </table>
         </div>
       </div>
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
+                Import Students from CSV
+              </h3>
+            </div>
+            <form onSubmit={handleImportCSV} className="p-6 space-y-4">
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-xs">
+                <p className="font-mono text-slate-700 dark:text-slate-300 mb-2">
+                  registrationNo,name,email,department,year,semester
+                </p>
+                <p className="text-slate-600 dark:text-slate-400">
+                  Optional: phone, address
+                </p>
+              </div>
+
+              <div>
+                <label className="block">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setImportFile(e.target.files[0])}
+                    className="hidden"
+                    id="csv-file-input"
+                    required
+                  />
+                  <div className="w-full px-4 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:border-cyan-500 dark:hover:border-cyan-500 transition-colors cursor-pointer bg-slate-50 dark:bg-slate-800">
+                    <div className="flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400">
+                      <FileSpreadsheet className="w-5 h-5" />
+                      <span className="text-sm">
+                        {importFile ? importFile.name : 'Choose CSV file...'}
+                      </span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              {importResults && (
+                <div className={`p-3 rounded-lg text-sm ${importResults.failed > 0 ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200' : 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200'}`}>
+                  <p>✅ Success: {importResults.success}</p>
+                  <p>❌ Failed: {importResults.failed}</p>
+                  {importResults.errors.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-semibold">View Errors</summary>
+                      <ul className="text-xs mt-1 max-h-24 overflow-y-auto">
+                        {importResults.errors.map((err, idx) => (
+                          <li key={idx}>• {err}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setImportResults(null);
+                    setImportFile(null);
+                  }}
+                  disabled={importLoading}
+                  className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {importResults ? 'Close' : 'Cancel'}
+                </button>
+                {!importResults && (
+                  <button
+                    type="submit"
+                    disabled={importLoading || !importFile}
+                    className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {importLoading && <LoadingSpinner size="sm" className="text-white" />}
+                    {importLoading ? 'Importing...' : 'Import'}
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showBulkEditModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Users className="w-6 h-6 text-slate-600 dark:text-slate-400" />
+                Bulk Edit Students
+              </h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                Update Year and/or Semester for {students.length} filtered student(s)
+              </p>
+            </div>
+            <form onSubmit={handleBulkEdit} className="p-6 space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Note:</strong> This will update all {students.length} student(s) currently displayed in the filtered list.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Update Year (Optional)
+                </label>
+                <CustomSelect
+                  value={bulkEditData.year}
+                  onChange={(e) => setBulkEditData({ ...bulkEditData, year: e.target.value })}
+                  placeholder="Keep current year"
+                  options={[
+                    { value: '', label: 'Keep current year' },
+                    { value: '1', label: 'Year 1' },
+                    { value: '2', label: 'Year 2' },
+                    { value: '3', label: 'Year 3' },
+                    { value: '4', label: 'Year 4' }
+                  ]}
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Update Semester (Optional)
+                </label>
+                <CustomSelect
+                  value={bulkEditData.semester}
+                  onChange={(e) => setBulkEditData({ ...bulkEditData, semester: e.target.value })}
+                  placeholder="Keep current semester"
+                  options={[
+                    { value: '', label: 'Keep current semester' },
+                    { value: '1', label: '1st Semester' },
+                    { value: '2', label: '2nd Semester' }
+                  ]}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkEditModal(false)}
+                  disabled={bulkEditLoading}
+                  className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={bulkEditLoading || (!bulkEditData.year && !bulkEditData.semester)}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {bulkEditLoading && <LoadingSpinner size="sm" className="text-white" />}
+                  {bulkEditLoading ? 'Updating...' : 'Update All Students'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

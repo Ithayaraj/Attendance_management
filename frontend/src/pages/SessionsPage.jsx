@@ -550,6 +550,26 @@ export const SessionsPage = () => {
         </div>
       </div>
 
+      {/* Warning for sessions without year/semester */}
+      {selectedCourseId && sessions.length > 0 && sessions.some(s => !s.year || !s.semester) && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div className="flex-1">
+              <h4 className="font-semibold text-red-800 dark:text-red-200 mb-1">
+                Old Sessions Detected
+              </h4>
+              <p className="text-sm text-red-700 dark:text-red-300 mb-2">
+                Some sessions are missing year/semester data. Students cannot attend these sessions.
+              </p>
+              <p className="text-xs text-red-600 dark:text-red-400">
+                <strong>Solution:</strong> Run the migration script: <code className="bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded">node backend/src/scripts/migrateSessionsYearSemester.js</code>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
         {!selectedCourseId ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400">
@@ -569,6 +589,7 @@ export const SessionsPage = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Date</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Time</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Room</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Batch</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -576,7 +597,7 @@ export const SessionsPage = () => {
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan="5" className="px-6 py-12 text-center">
+                    <td colSpan="6" className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <LoadingSpinner size="lg" className="text-cyan-600" />
                         <span className="text-slate-500 dark:text-slate-400">Loading sessions...</span>
@@ -584,13 +605,24 @@ export const SessionsPage = () => {
                     </td>
                   </tr>
                 ) : sessions.length === 0 ? (
-                  <tr><td colSpan="5" className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
+                  <tr><td colSpan="6" className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
                 ) : (
                   sessions.map(s => (
                     <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                       <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{s.date}</td>
                       <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{s.startTime} - {s.endTime}</td>
                       <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{s.room}</td>
+                      <td className="px-6 py-4 text-sm">
+                        {s.year && s.semester ? (
+                          <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                            Y{s.year}S{s.semester}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" title="Missing year/semester - students cannot attend">
+                            ⚠️ Missing
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${s.status === 'live' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : s.status === 'scheduled' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
                           {s.status}
