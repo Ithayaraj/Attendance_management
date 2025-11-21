@@ -204,6 +204,76 @@ export const getBatchLineAnalytics = async (startYear) => {
   return { points: Array.from(pointsMap.values()) };
 };
 
+export const getCurrentSessions = async () => {
+  // Get today's sessions that are live or scheduled
+  const today = new Date().toISOString().slice(0, 10);
+  
+  // Get current time in HH:MM format
+  const now = new Date();
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  
+  const sessions = await ClassSession.find({
+    date: today,
+    status: { $in: ['live', 'scheduled'] }
+  })
+    .populate('courseId')
+    .sort({ year: 1, semester: 1, startTime: 1 }); // Sort hierarchically: year -> semester -> time
+
+  // Auto-close sessions that have passed their end time
+  for (const session of sessions) {
+    if (session.status === 'live' && session.endTime < currentTime) {
+      session.status = 'closed';
+      await session.save();
+    }
+  }
+
+  // Filter out closed sessions
+  const activeSessions = sessions.filter(s => s.status !== 'closed');
+
+  const sessionsWithStats = await Promise.all(
+    activeSessions.map(async (session) => {
+      // Get attendance records for this session
+      const records = await AttendanceRecord.find({ sessionId: session._id });
+      
+      // Get total enrolled students for this course
+      const enrollments = await Enrollment.find({ courseId: session.courseId._id });
+      const totalStudents = enrollments.length;
+      
+      // Calculate stats
+      const stats = { present: 0, late: 0, absent: 0 };
+      for (const r of records) {
+        stats[r.status]++;
+      }
+      
+      // Calculate not attending (students who haven't scanned yet)
+      const scannedCount = stats.present + stats.late;
+      const notAttending = totalStudents - scannedCount;
+      
+      return {
+        id: session._id,
+        courseCode: session.courseId?.code,
+        courseName: session.courseId?.name,
+        department: session.courseId?.department,
+        date: session.date,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        room: session.room,
+        year: session.year,
+        semester: session.semester,
+        status: session.status,
+        totalStudents,
+        present: stats.present,
+        late: stats.late,
+        absent: stats.absent,
+        notAttending,
+        scannedCount
+      };
+    })
+  );
+
+  return sessionsWithStats;
+};
+
 export const getStudentAttendance = async (studentId, fromDate, toDate) => {
   const query = { studentId };
 

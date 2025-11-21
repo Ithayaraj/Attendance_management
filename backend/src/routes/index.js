@@ -78,6 +78,7 @@ router.get('/students/:studentId/attendance', requireAuth, attendanceController.
 router.get('/analytics/monthly', requireAuth, analyticsController.getMonthlyStats);
 router.get('/analytics/live', requireAuth, analyticsController.getLiveSessionStats);
 router.get('/analytics/session/year-wise', requireAuth, analyticsController.getSessionSummaryYearWise);
+router.get('/analytics/current-sessions', requireAuth, analyticsController.getCurrentSessionsStats);
 router.get('/analytics/batch/line', requireAuth, analyticsController.getBatchLineStats);
 router.get('/analytics/students/:id', requireAuth, studentAnalyticsController.getStudentAnalytics);
 router.get('/analytics/students/:id/semester', requireAuth, studentAnalyticsController.getStudentSemesterAnalytics);

@@ -1,4 +1,4 @@
-import { getMonthlyAnalytics, getLiveSessionAnalytics, getSessionSummaryByYear, getBatchLineAnalytics } from '../services/analyticsService.js';
+import { getMonthlyAnalytics, getLiveSessionAnalytics, getSessionSummaryByYear, getBatchLineAnalytics, getCurrentSessions } from '../services/analyticsService.js';
 
 export const getMonthlyStats = async (req, res, next) => {
   try {
@@ -47,6 +47,15 @@ export const getBatchLineStats = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'startYear is required' });
     }
     const data = await getBatchLineAnalytics(startYear);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCurrentSessionsStats = async (req, res, next) => {
+  try {
+    const data = await getCurrentSessions();
     res.json({ success: true, data });
   } catch (error) {
     next(error);
