@@ -125,23 +125,25 @@ export const createSession = async (req, res, next) => {
 
     // Check for time conflicts with other sessions for the same batch (year + semester)
     // A batch can only have one session at a time - sessions cannot overlap
+    console.log(`Checking batch time conflicts for Y${year}S${semester} on ${date}, ${startTime}-${endTime}`);
+    
     const batchTimeConflict = await ClassSession.findOne({
       year: year,
       semester: semester,
       date: date,
       _id: { $ne: req.body.sessionId }, // Exclude current session if updating
       $or: [
-        // New session starts during existing session
+        // New session starts during existing session (existing.start <= new.start < existing.end)
         { $and: [
           { startTime: { $lte: startTime } },
           { endTime: { $gt: startTime } }
         ]},
-        // New session ends during existing session
+        // New session ends during existing session (existing.start < new.end <= existing.end)
         { $and: [
           { startTime: { $lt: endTime } },
           { endTime: { $gte: endTime } }
         ]},
-        // New session completely contains existing session
+        // New session completely contains existing session (new.start <= existing.start AND new.end >= existing.end)
         { $and: [
           { startTime: { $gte: startTime } },
           { endTime: { $lte: endTime } }
@@ -150,11 +152,14 @@ export const createSession = async (req, res, next) => {
     }).populate('courseId');
 
     if (batchTimeConflict) {
+      console.log(`Batch time conflict found: ${batchTimeConflict.courseId.code} (${batchTimeConflict.startTime}-${batchTimeConflict.endTime})`);
       return res.status(400).json({
         success: false,
         message: `Time conflict for Year ${year}, Semester ${semester} on ${date}. Another session (${batchTimeConflict.courseId.code}) is scheduled from ${batchTimeConflict.startTime} to ${batchTimeConflict.endTime}. Please schedule after ${batchTimeConflict.endTime}.`
       });
     }
+    
+    console.log(`No batch time conflicts found`);
 
     // Check for room conflicts (same room, same date, overlapping time)
     const roomConflict = await ClassSession.findOne({

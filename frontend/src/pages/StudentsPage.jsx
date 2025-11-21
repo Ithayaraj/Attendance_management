@@ -3,8 +3,10 @@ import { Plus, Search, Eye, Edit, Trash2, Download, Users, Upload, FileSpreadshe
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { CustomSelect } from '../components/CustomSelect';
+import { useNotification } from '../contexts/NotificationContext';
 
 export const StudentsPage = ({ onViewStudent }) => {
+  const { showSuccess, showError, showWarning } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
@@ -255,20 +257,20 @@ export const StudentsPage = ({ onViewStudent }) => {
     try {
       const payload = { ...formData };
       if (!editingStudent) {
-        if (!selectedBatchYear) return alert('Please select a batch at the top of the page');
-        if (!selectedFaculty) return alert('Please select a faculty at the top of the page');
-        if (!selectedDepartment) return alert('Please select a department at the top of the page');
-        if (!regPrefix) return alert('Please complete registration number prefix');
-        if (!regSuffix) return alert('Please enter registration number suffix');
+        if (!selectedBatchYear) { showWarning('Please select a batch at the top of the page'); return; }
+        if (!selectedFaculty) { showWarning('Please select a faculty at the top of the page'); return; }
+        if (!selectedDepartment) { showWarning('Please select a department at the top of the page'); return; }
+        if (!regPrefix) { showWarning('Please complete registration number prefix'); return; }
+        if (!regSuffix) { showWarning('Please enter registration number suffix'); return; }
         payload.registrationNo = `${regPrefix}${regSuffix}`;
         payload.department = selectedDepartment;
       }
       if (editingStudent) {
         await apiClient.put(`/api/students/${editingStudent._id}`, payload);
-        alert('Student updated successfully!');
+        showSuccess('Student updated successfully!');
       } else {
         await apiClient.post('/api/students', payload);
-        alert('Student created successfully!');
+        showSuccess('Student created successfully!');
       }
       setShowAddModal(false);
       setEditingStudent(null);
@@ -288,7 +290,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       sessionStorage.removeItem(cacheKey);
       await reloadStudents();
     } catch (error) {
-      alert('Error: ' + error.message);
+      showError(error.message || 'Failed to save student', 'Error');
     }
   };
 
@@ -317,7 +319,7 @@ export const StudentsPage = ({ onViewStudent }) => {
         sessionStorage.removeItem(cacheKey);
         await reloadStudents();
       } catch (error) {
-        alert('Error: ' + error.message);
+        showError(error.message || 'Failed to delete student', 'Delete Error');
       }
     }
   };
@@ -326,7 +328,7 @@ export const StudentsPage = ({ onViewStudent }) => {
     e.preventDefault();
     
     if (!bulkEditData.year && !bulkEditData.semester) {
-      alert('Please select at least Year or Semester to update');
+      showWarning('Please select at least Year or Semester to update');
       return;
     }
 
@@ -353,7 +355,7 @@ export const StudentsPage = ({ onViewStudent }) => {
         updateData
       });
 
-      alert(`Successfully updated ${students.length} student(s)!`);
+      showSuccess(`Successfully updated ${students.length} student(s)!`);
       setShowBulkEditModal(false);
       setBulkEditData({ year: '', semester: '' });
       
@@ -362,7 +364,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       sessionStorage.removeItem(cacheKey);
       await reloadStudents();
     } catch (error) {
-      alert('Error updating students: ' + error.message);
+      showError(error.message || 'Failed to update students', 'Update Failed');
     } finally {
       setBulkEditLoading(false);
     }
@@ -370,7 +372,7 @@ export const StudentsPage = ({ onViewStudent }) => {
 
   const handleExportCSV = () => {
     if (students.length === 0) {
-      alert('No students to export');
+      showWarning('No students to export');
       return;
     }
 
@@ -403,12 +405,12 @@ export const StudentsPage = ({ onViewStudent }) => {
     e.preventDefault();
     
     if (!importFile) {
-      alert('Please select a file');
+      showWarning('Please select a file');
       return;
     }
 
     if (!selectedBatchYear || !selectedFaculty || !selectedDepartment) {
-      alert('Please select Batch, Faculty, and Department first');
+      showWarning('Please select Batch, Faculty, and Department first');
       return;
     }
 
@@ -420,7 +422,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       const lines = text.split('\n').filter(line => line.trim());
       
       if (lines.length < 2) {
-        alert('CSV file is empty or invalid');
+        showError('CSV file is empty or invalid', 'Invalid File');
         return;
       }
 
@@ -431,7 +433,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       // Validate headers
       const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
       if (missingHeaders.length > 0) {
-        alert(`Missing required columns: ${missingHeaders.join(', ')}`);
+        showError(`Missing required columns: ${missingHeaders.join(', ')}`, 'Invalid CSV Format');
         return;
       }
 
@@ -484,7 +486,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       }
 
       if (studentsToImport.length === 0) {
-        alert('No valid students found in CSV file');
+        showError('No valid students found in CSV file', 'Import Failed');
         setImportResults({ success: 0, failed: errors.length, errors });
         return;
       }
@@ -517,7 +519,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       }
 
     } catch (error) {
-      alert('Error importing CSV: ' + error.message);
+      showError(error.message || 'Failed to import CSV', 'Import Error');
     } finally {
       setImportLoading(false);
     }
@@ -572,9 +574,9 @@ export const StudentsPage = ({ onViewStudent }) => {
           )}
           <button
             onClick={() => {
-              if (!selectedBatchYear) return alert('Please select a batch first');
-              if (!selectedFaculty) return alert('Please select a faculty first');
-              if (!selectedDepartment) return alert('Please select a department first');
+              if (!selectedBatchYear) { showWarning('Please select a batch first'); return; }
+              if (!selectedFaculty) { showWarning('Please select a faculty first'); return; }
+              if (!selectedDepartment) { showWarning('Please select a department first'); return; }
               setEditingStudent(null);
               setFormData({
                 registrationNo: '',

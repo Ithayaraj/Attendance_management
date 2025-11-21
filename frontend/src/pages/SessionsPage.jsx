@@ -3,10 +3,12 @@ import { Plus, RefreshCw, PlayCircle, XCircle, Edit, Trash2 } from 'lucide-react
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { CustomSelect } from '../components/CustomSelect';
+import { useNotification } from '../contexts/NotificationContext';
 
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 export const SessionsPage = () => {
+  const { showSuccess, showError, showWarning } = useNotification();
   const [courses, setCourses] = useState([]);
   const [selectedFaculty, setSelectedFaculty] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
@@ -118,7 +120,7 @@ export const SessionsPage = () => {
       }));
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Failed to load courses');
+      showError(e.message || 'Failed to load courses', 'Error Loading Courses');
     }
   };
 
@@ -180,7 +182,7 @@ export const SessionsPage = () => {
       }));
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Failed to load sessions');
+      showError(e.message || 'Failed to load sessions', 'Error Loading Sessions');
     } finally {
       setLoading(false);
     }
@@ -413,7 +415,10 @@ export const SessionsPage = () => {
 
   const createSession = async (e) => {
     e.preventDefault();
-    if (!selectedCourseId) return alert('Select a course');
+    if (!selectedCourseId) {
+      showWarning('Please select a course first', 'Course Required');
+      return;
+    }
     setCreating(true);
     try {
       const payload = {
@@ -428,11 +433,12 @@ export const SessionsPage = () => {
         await apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'live' });
       }
       setShowCreate(false);
+      showSuccess('Session created successfully!', 'Success');
       // Clear cache and reload
       sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (e) {
-      alert(e.message || 'Create failed');
+      showError(e.message || 'Failed to create session', 'Creation Failed');
     } finally {
       setCreating(false);
     }
@@ -441,11 +447,12 @@ export const SessionsPage = () => {
   const setStatus = async (sessionId, status) => {
     try {
       await apiClient.patch(`/api/sessions/${sessionId}/status`, { status });
+      showSuccess(`Session status updated to ${status}`, 'Status Updated');
       // Clear cache and reload
       sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (e) {
-      alert(e.message || 'Failed to update status');
+      showError(e.message || 'Failed to update status', 'Update Failed');
     }
   };
 
@@ -466,11 +473,12 @@ export const SessionsPage = () => {
       });
       setShowEdit(false);
       setEditing(null);
+      showSuccess('Session updated successfully!', 'Success');
       // Clear cache and reload
       sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (err) {
-      alert(err.message || 'Update failed');
+      showError(err.message || 'Failed to update session', 'Update Failed');
     }
   };
 
@@ -478,11 +486,12 @@ export const SessionsPage = () => {
     if (!confirm('Delete this session?')) return;
     try {
       await apiClient.delete(`/api/sessions/${s._id}`);
+      showSuccess('Session deleted successfully!', 'Success');
       // Clear cache and reload
       sessionStorage.removeItem(`sessions_${selectedCourseId}`);
       await loadSessions(selectedCourseId);
     } catch (err) {
-      alert(err.message || 'Delete failed');
+      showError(err.message || 'Failed to delete session', 'Delete Failed');
     }
   };
 
