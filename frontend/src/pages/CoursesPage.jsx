@@ -4,6 +4,7 @@ import { apiClient } from '../lib/apiClient';
 import { useAuth } from '../hooks/useAuth';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { CustomSelect } from '../components/CustomSelect';
+import { useNotification } from '../contexts/NotificationContext';
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const CACHE_KEY = 'courses_data';
@@ -87,7 +88,7 @@ export const CoursesPage = () => {
       }));
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Failed to load courses');
+      showError(e.message || 'Failed to load courses', 'Error');
     } finally {
       setLoading(false);
     }
@@ -158,7 +159,7 @@ export const CoursesPage = () => {
 
   const openCreate = () => {
     if (!selectedFaculty || !selectedDepartment || !filterYear) {
-      alert('Please select Faculty, Department, and Year before creating a course');
+      showWarning('Please select Faculty, Department, and Year before creating a course');
       return;
     }
     setEditing(null);
@@ -191,9 +192,10 @@ export const CoursesPage = () => {
       const cacheKey = `${CACHE_KEY}_${selectedFaculty}_${selectedDepartment}_${filterYear || 'all'}`;
       sessionStorage.removeItem(cacheKey);
       hasLoadedRef.current = false;
+      showSuccess(editing ? 'Course updated successfully!' : 'Course created successfully!');
       await load();
     } catch (e) {
-      alert(e.message || 'Save failed');
+      showError(e.message || 'Failed to save course', 'Save Failed');
     }
   };
 
@@ -205,9 +207,10 @@ export const CoursesPage = () => {
       const cacheKey = `${CACHE_KEY}_${selectedFaculty}_${selectedDepartment}_${filterYear || 'all'}`;
       sessionStorage.removeItem(cacheKey);
       hasLoadedRef.current = false;
+      showSuccess('Course deleted successfully!');
       await load();
     } catch (e) {
-      alert(e.message || 'Delete failed');
+      showError(e.message || 'Failed to delete course', 'Delete Failed');
     }
   };
 

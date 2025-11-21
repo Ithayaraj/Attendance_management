@@ -3,28 +3,33 @@ import { createPortal } from 'react-dom';
 import { X, CheckCircle, AlertCircle, Info, XCircle } from 'lucide-react';
 
 export const Notification = ({ notification, onClose }) => {
-  const [isVisible, setIsVisible] = useState(true); // Start visible immediately
+  const [isVisible, setIsVisible] = useState(true);
+  const [progress, setProgress] = useState(100);
 
   useEffect(() => {
-    console.log('=== Notification useEffect triggered ===');
-    console.log('Notification ID:', notification.id);
-    console.log('Notification data:', notification);
-    // Ensure it's visible immediately
     setIsVisible(true);
-    console.log('Notification visibility set to true');
+    
+    const duration = notification.duration || 5000;
+    const interval = 50; // Update every 50ms
+    const decrement = (interval / duration) * 100;
+    
+    // Progress bar animation
+    const progressTimer = setInterval(() => {
+      setProgress((prev) => {
+        const next = prev - decrement;
+        return next <= 0 ? 0 : next;
+      });
+    }, interval);
     
     // Auto-close after duration
-    const timer = setTimeout(() => {
-      console.log('Auto-closing notification:', notification.id);
+    const closeTimer = setTimeout(() => {
       setIsVisible(false);
-      setTimeout(() => {
-        console.log('Calling onClose for notification:', notification.id);
-        onClose();
-      }, 300); // Wait for fade out
-    }, notification.duration || 5000);
+      setTimeout(() => onClose(), 300);
+    }, duration);
 
     return () => {
-      clearTimeout(timer);
+      clearInterval(progressTimer);
+      clearTimeout(closeTimer);
     };
   }, [notification, onClose]);
 
@@ -54,124 +59,97 @@ export const Notification = ({ notification, onClose }) => {
     }
   };
 
-  console.log('=== Notification Component Render ===');
-  console.log('isVisible:', isVisible);
-  console.log('notification ID:', notification.id);
-  console.log('notification title:', notification.title);
-  console.log('notification message:', notification.message);
-  console.log('notification type:', notification.type);
+  const getProgressColor = () => {
+    switch (notification.type) {
+      case 'success':
+        return 'bg-green-500';
+      case 'error':
+        return 'bg-red-500';
+      case 'warning':
+        return 'bg-amber-500';
+      default:
+        return 'bg-cyan-500';
+    }
+  };
   
-  if (!isVisible) {
-    console.log('Notification is not visible, returning null');
-    return null;
-  }
+  if (!isVisible) return null;
   
   return (
     <div
-      className="min-w-[320px] max-w-sm w-full"
-      style={{ 
-        transform: 'translateX(0)',
-        opacity: 1,
-        transition: 'all 0.3s ease-in-out',
-        willChange: 'transform, opacity',
-        pointerEvents: 'auto',
-        display: 'block',
-        visibility: 'visible',
-        position: 'relative',
-        zIndex: 100000,
-        backgroundColor: 'transparent',
-      }}
+      className={`min-w-[320px] max-w-md w-full transform transition-all duration-300 ${
+        isVisible ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0'
+      }`}
     >
       <div
-        className={`${getBgColor()} rounded-lg shadow-xl border-2 p-4 flex items-start gap-3`}
-        style={{
-          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-        }}
+        className={`${getBgColor()} rounded-lg shadow-2xl border-2 overflow-hidden`}
       >
-        <div className="flex-shrink-0 mt-0.5">
-          {getIcon()}
+        <div className="p-4 flex items-start gap-3">
+          <div className="flex-shrink-0 mt-0.5">
+            {getIcon()}
+          </div>
+          <div className="flex-1 min-w-0">
+            {notification.title && (
+              <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1">
+                {notification.title}
+              </p>
+            )}
+            {typeof notification.message === 'string' ? (
+              <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line">
+                {notification.message}
+              </div>
+            ) : (
+              <div className="text-sm text-slate-700 dark:text-slate-300">
+                {notification.message}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              setIsVisible(false);
+              setTimeout(() => onClose(), 300);
+            }}
+            className="flex-shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-        <div className="flex-1 min-w-0">
-          {notification.title && (
-            <p className="text-sm font-semibold text-slate-900 dark:text-white mb-2">
-              {notification.title}
-            </p>
-          )}
-          {typeof notification.message === 'string' ? (
-            <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed">
-              {notification.message}
-            </div>
-          ) : (
-            <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              {notification.message}
-            </div>
-          )}
+        {/* Progress Bar */}
+        <div className="h-1 bg-slate-200 dark:bg-slate-700">
+          <div
+            className={`h-full ${getProgressColor()} transition-all duration-50 ease-linear`}
+            style={{ width: `${progress}%` }}
+          />
         </div>
-        <button
-          onClick={() => {
-            setIsVisible(false);
-            setTimeout(() => onClose(), 300);
-          }}
-          className="flex-shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
       </div>
     </div>
   );
 };
 
 export const NotificationContainer = ({ notifications, onRemove }) => {
-  console.log('=== NotificationContainer render ===');
-  console.log('Notifications count:', notifications.length);
-  console.log('Notifications array:', JSON.stringify(notifications, null, 2));
-  console.log('onRemove function:', typeof onRemove);
-  
-  if (notifications.length === 0) {
-    console.log('No notifications to display - returning null');
-    return null;
-  }
-  
-  console.log('Rendering', notifications.length, 'notifications');
+  if (notifications.length === 0) return null;
   
   const containerContent = (
     <div 
-      className="fixed top-4 right-4 space-y-2 pointer-events-none"
+      className="fixed top-4 right-4 space-y-3 pointer-events-none z-[99999]"
       style={{ 
         maxWidth: '420px',
         width: 'calc(100vw - 2rem)',
-        position: 'fixed',
-        top: '1rem',
-        right: '1rem',
-        zIndex: 99999,
-        pointerEvents: 'none',
-        backgroundColor: 'transparent',
       }}
     >
-      {notifications.map((notification, index) => {
-        console.log(`Rendering notification ${index + 1}/${notifications.length}:`, notification);
-        return (
-          <div 
-            key={notification.id} 
-            className="pointer-events-auto mb-2"
-            style={{
-              pointerEvents: 'auto',
-            }}
-          >
-            <Notification
-              notification={notification}
-              onClose={() => {
-                console.log('Removing notification:', notification.id);
-                onRemove(notification.id);
-              }}
-            />
-          </div>
-        );
-      })}
+      {notifications.map((notification) => (
+        <div 
+          key={notification.id} 
+          className="pointer-events-auto"
+        >
+          <Notification
+            notification={notification}
+            onClose={() => onRemove(notification.id)}
+          />
+        </div>
+      ))}
     </div>
   );
   
-  // Use portal to render at document body level to avoid any parent container issues
   return typeof document !== 'undefined' 
     ? createPortal(containerContent, document.body)
     : containerContent;

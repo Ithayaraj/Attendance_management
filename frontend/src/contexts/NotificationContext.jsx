@@ -18,7 +18,7 @@ export const NotificationProvider = ({ children }) => {
     const newNotification = {
       id,
       type: 'info',
-      duration: 5000,
+      duration: 4000,
       ...notification,
     };
 
@@ -47,7 +47,7 @@ export const NotificationProvider = ({ children }) => {
   }, [showNotification]);
 
   const showError = useCallback((message, title = 'Error') => {
-    return showNotification({ type: 'error', message, title, duration: 7000 });
+    return showNotification({ type: 'error', message, title, duration: 5000 });
   }, [showNotification]);
 
   const showWarning = useCallback((message, title = 'Warning') => {
