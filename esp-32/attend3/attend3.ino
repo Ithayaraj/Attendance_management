@@ -1,8 +1,65 @@
+/*
+ * ESP32 Attendance Management System
+ * 
+ * COMPONENT WIRING REFERENCE:
+ * 
+ * 1. LCD I2C Display (16x2):
+ *    - VCC → 3.3V (or 5V)
+ *    - GND → GND
+ *    - SDA → GPIO 21
+ *    - SCL → GPIO 22
+ *    - I2C Address: 0x27 or 0x3F (check with I2C scanner)
+ * 
+ * 2. GM65 Barcode Scanner (UART2):
+ *    - VCC → 5V (or 3.3V depending on scanner)
+ *    - GND → GND
+ *    - TX → GPIO 16 (ESP32 RX2)
+ *    - RX → GPIO 17 (ESP32 TX2) [Optional]
+ * 
+ * 3. Active Buzzer with 220Ω Resistor:
+ *    - GPIO 25 → 220Ω Resistor → Buzzer(+) → Buzzer(-) → GND
+ *    - OR: GPIO 25 → 220Ω Resistor → GND
+ *          Buzzer(+) → GPIO 25 (after resistor)
+ *          Buzzer(-) → GND
+ * 
+ * 4. LED Indicators with 220Ω Resistors:
+ *    - Blue LED: D2 (GPIO 2) → 220Ω Resistor → Blue LED Anode(+) → Blue LED Cathode(-) → GND
+ *    - Red LED: D4 (GPIO 4) → 220Ω Resistor → Red LED Anode(+) → Red LED Cathode(-) → GND
+ *    - Note: Only Blue LED is used for WiFi status. Red LED is kept OFF.
+ *    - For high-power bulbs, use transistor or relay (see WIRING_REFERENCE.md)
+ * 
+ * LED STATUS INDICATORS (Blue LED only, Red LED always OFF):
+ *    - Power On: Blue LED ON (steady - power indicator)
+ *    - WiFi Connected: Blue LED blinks continuously (500ms interval)
+ *    - WiFi Disconnected: Blue LED ON (steady - power indicator)
+ *    - ID Scanned: Quick flash (100ms, then returns to WiFi status)
+ *    - Processing: ON (temporary during processing)
+ *    - Status Messages: Blink patterns (then returns to WiFi status)
+ *    - Red LED: Always OFF (disabled, not used)
+ * 
+ * For detailed wiring diagrams and troubleshooting, see: WIRING_REFERENCE.md
+ */
+
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <Preferences.h>  // For persistent storage (survives power loss)
+
+// ===== Forward Declarations =====
+String sendScanToServer(String registrationNo, unsigned long timestamp = 0);
+String cleanScannedData(String rawData);
+void logAttendance(String studentID);
+String extractErrorMessage(String json);
+bool addToOfflineQueue(String registrationNo, unsigned long timestamp);
+void processOfflineQueue();
+void compactOfflineQueue();
+void saveOfflineQueue();
+void loadOfflineQueue();
+void clearOfflineQueue();
+bool ensureWiFi(uint32_t timeoutMs);
+void processID(String rawData);
 
 // LCD I2C address (0x27 or 0x3F, உங்கள் module-க்கு எந்த address இருக்குனு I2C Scanner code run பண்ணி check பண்ணுங்க)
 // For ESP32 compatibility, install "LiquidCrystal I2C" by Marco Schwartz from Library Manager
@@ -30,8 +87,26 @@ String attendanceLog[50]; // Store up to 50 attendance records
 int attendanceCount = 0;
 unsigned long lastScanTime = 0;
 unsigned long lastWiFiCheck = 0;
+unsigned long lastLEDBlinkTime = 0; // For WiFi status LED blinking
+bool wifiConnected = false; // Track WiFi connection status
+
+// ===== Offline Queue System =====
+// Structure to store offline scans with timestamp
+struct OfflineScan {
+  String registrationNo;
+  unsigned long timestamp;  // millis() when scanned
+  bool processed;           // Flag to track if sent to server
+};
+
+#define MAX_OFFLINE_QUEUE 20  // Maximum offline scans to store (adjust based on RAM)
+OfflineScan offlineQueue[MAX_OFFLINE_QUEUE];
+int offlineQueueCount = 0;
+Preferences preferences;  // For persistent storage across reboots
 
 // ===== Buzzer (Active buzzer recommended) =====//18
+// Wiring: Buzzer (+) → GPIO 25 → 220Ω Resistor → Buzzer (-) → GND
+//        OR: Buzzer (+) → GPIO 25 → 220Ω Resistor → GND
+//            Buzzer (-) → GND
 #define BUZZER_PIN 25
 
 void buzz(uint16_t onMs, uint16_t offMs, uint8_t repeats) {
@@ -46,6 +121,73 @@ void buzz(uint16_t onMs, uint16_t offMs, uint8_t repeats) {
     delay(onMs);
     digitalWrite(BUZZER_PIN, LOW);
     if (i + 1 < repeats) delay(offMs);
+  }
+}
+
+// ===== LED/Bulb Indicator =====
+// Wiring Details:
+//   Blue LED: D2 (GPIO 2) → 220Ω Resistor → Blue LED Anode (+) → Blue LED Cathode (-) → GND
+//   Red LED: D4 (GPIO 4) → 220Ω Resistor → Red LED Anode (+) → Red LED Cathode (-) → GND
+//   Note: Red LED will be kept OFF. Only Blue LED is used for WiFi status indication.
+//   Current wiring: D2 (GPIO 2) → 220Ω Resistor → Blue LED Anode(+) → Blue LED Cathode(-) → GND ✓
+//   Current Calculation with 220Ω resistor:
+//     - ESP32 GPIO: 3.3V, LED Forward Voltage: ~2.0V
+//     - Current = (3.3V - 2.0V) / 220Ω ≈ 5.9mA (SAFE - well below 20mA LED limit)
+//     - The 220Ω resistor protects the LED from overcurrent damage
+#define BLUE_LED_PIN 2   // Blue LED - WiFi status indicator
+#define RED_LED_PIN 4    // Red LED - Keep OFF (not used)
+#define LED_BLINK_INTERVAL 500  // Blink interval in milliseconds
+
+// Use BLUE_LED_PIN as the main LED_PIN for compatibility
+#define LED_PIN BLUE_LED_PIN
+
+void ledOn() {
+  // Turn ON Blue LED only
+  if (BLUE_LED_PIN >= 0) {
+    digitalWrite(BLUE_LED_PIN, HIGH);
+  }
+  // Ensure Red LED is OFF
+  digitalWrite(RED_LED_PIN, LOW);
+}
+
+void ledOff() {
+  // Turn OFF Blue LED
+  if (BLUE_LED_PIN >= 0) {
+    digitalWrite(BLUE_LED_PIN, LOW);
+  }
+  // Ensure Red LED is OFF
+  digitalWrite(RED_LED_PIN, LOW);
+}
+
+void ledBlink(uint16_t onMs, uint16_t offMs, uint8_t repeats) {
+  if (BLUE_LED_PIN < 0) {
+    Serial.println("ERROR: LED pin not configured");
+    return;
+  }
+  
+  // Ensure Red LED stays OFF during blinking
+  digitalWrite(RED_LED_PIN, LOW);
+  
+  // Blink only Blue LED
+  for (uint8_t i = 0; i < repeats; i++) {
+    digitalWrite(BLUE_LED_PIN, HIGH);
+    delay(onMs);
+    digitalWrite(BLUE_LED_PIN, LOW);
+    if (i + 1 < repeats) delay(offMs);
+  }
+}
+
+void ledBlinkContinuous(uint16_t intervalMs) {
+  static unsigned long lastBlinkTime = 0;
+  static bool ledState = false;
+  
+  // Ensure Red LED stays OFF
+  digitalWrite(RED_LED_PIN, LOW);
+  
+  if (millis() - lastBlinkTime >= intervalMs) {
+    ledState = !ledState;
+    digitalWrite(BLUE_LED_PIN, ledState ? HIGH : LOW);
+    lastBlinkTime = millis();
   }
 }
 
@@ -97,6 +239,11 @@ bool ensureWiFi(uint32_t timeoutMs) {
     res = WiFi.status();
     if (res == WL_CONNECTED) break;
     
+    // Keep Blue LED ON (steady) during connection attempt - no blinking until connected
+    // Red LED stays OFF
+    digitalWrite(BLUE_LED_PIN, HIGH);
+    digitalWrite(RED_LED_PIN, LOW);
+    
     // Update LCD with connection progress
     if (dotCount % 4 == 0) {
       lcd.clear();
@@ -111,6 +258,13 @@ bool ensureWiFi(uint32_t timeoutMs) {
     
     delay(250);
     Serial.print(".");
+  }
+  
+  // If connection failed, ensure Blue LED stays ON (steady) - no blinking
+  // Red LED stays OFF
+  if (WiFi.status() != WL_CONNECTED) {
+    digitalWrite(BLUE_LED_PIN, HIGH); // Blue LED ON (steady) when not connected
+    digitalWrite(RED_LED_PIN, LOW);   // Red LED OFF
   }
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -192,6 +346,16 @@ void setup() {
   delay(1000); // Wait for serial to initialize
   Serial.println("\n\n=== ESP32 Attendance System Starting ===");
   
+  // Initialize persistent storage
+  Serial.println("Initializing persistent storage...");
+  preferences.begin("attendance", false);  // namespace: "attendance", read-write mode
+  
+  // Load offline queue from storage (survives power loss)
+  loadOfflineQueue();
+  Serial.print("Loaded ");
+  Serial.print(offlineQueueCount);
+  Serial.println(" offline scans from storage");
+  
   // LCD init with error handling
   Serial.println("Initializing LCD...");
   lcd.init();
@@ -217,12 +381,25 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
   
+  // LED init with error handling - Blue LED ON, Red LED OFF
+  Serial.println("Initializing LED indicator...");
+  pinMode(BLUE_LED_PIN, OUTPUT);
+  pinMode(RED_LED_PIN, OUTPUT);
+  
+  // Red LED - Keep OFF (not used)
+  digitalWrite(RED_LED_PIN, LOW);
+  
+  // Blue LED - Turn ON immediately when power is on (power indicator)
+  ledOn(); // Blue LED ON (steady) - will blink when WiFi connects
+  Serial.println("Blue LED: Power indicator ON (system powered)");
+  Serial.println("Red LED: OFF (disabled)");
+  
   // Test buzzer
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Testing Buzzer");
+  lcd.print("Testing Devices");
   buzz(100, 0, 1); // Single beep to confirm buzzer works
-  delay(500);
+  delay(300);
   Serial.println("Buzzer: Initialized successfully");
 
   // ===== Wi-Fi =====
@@ -236,6 +413,8 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print(String(WIFI_SSID).substring(0, 16));
   
+  // LED blinks during WiFi connection (shows system is working)
+  // This will happen inside ensureWiFi function
   bool ok = ensureWiFi(30000);
   lcd.clear();
   
@@ -246,6 +425,8 @@ void setup() {
     String ip = WiFi.localIP().toString();
     lcd.print(ip.length() > 16 ? ip.substring(0, 16) : ip);
     Serial.println("WiFi: Connection successful");
+    wifiConnected = true; // Set WiFi connected status
+    // LED will start blinking continuously in main loop (WiFi connected)
     buzz(50, 50, 2); // Success beeps
   } else {
     lcd.setCursor(0, 0);
@@ -254,6 +435,9 @@ void setup() {
     lcd.print("Check Config");
     Serial.println("ERROR: WiFi connection failed");
     Serial.println("Hint: Ensure 2.4GHz SSID, correct password, and proximity to router.");
+    wifiConnected = false; // Set WiFi disconnected status
+    digitalWrite(BLUE_LED_PIN, HIGH); // Blue LED ON (steady) when WiFi not connected
+    digitalWrite(RED_LED_PIN, LOW);   // Red LED OFF
     buzz(200, 100, 3); // Error beeps
   }
   delay(2500);
@@ -287,6 +471,12 @@ void setup() {
   lcd.print("Welcome!");
   lcd.setCursor(0, 1);
   lcd.print("Scan Your ID");
+  // LED status depends on WiFi: ON if disconnected, will blink if connected (handled in loop)
+  if (!wifiConnected) {
+    digitalWrite(BLUE_LED_PIN, HIGH); // Blue LED ON (steady) when WiFi not connected
+    digitalWrite(RED_LED_PIN, LOW);   // Red LED OFF
+  }
+  // If WiFi connected, LED will blink continuously in loop()
   Serial.println("=== System Ready - Waiting for scans ===\n");
 }
 
@@ -358,6 +548,7 @@ void loop() {
       lcd.print("Please Wait...");
       lcd.setCursor(0, 1);
       lcd.print("Too Fast!");
+      ledBlink(100, 100, 1); // Quick blink for warning
       buzz(50, 50, 1);
       delay(1000);
       lcd.clear();
@@ -365,7 +556,33 @@ void loop() {
       lcd.print("Ready");
       lcd.setCursor(0, 1);
       lcd.print("Scan Your ID");
+      // LED will return to WiFi status (blink if connected, ON if not) in loop
     }
+  }
+  
+  // LED Status Control: 
+  //   - WiFi CONNECTED: Blue LED blinks continuously (500ms interval)
+  //   - WiFi DISCONNECTED: Blue LED stays ON (steady) - NO blinking
+  //   - Red LED: Always OFF (disabled)
+  // This runs continuously in main loop and controls LED based on WiFi status
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    // WiFi is connected - blink Blue LED continuously
+    if (millis() - lastLEDBlinkTime >= 500) {
+      static bool ledState = false;
+      ledState = !ledState;
+      digitalWrite(BLUE_LED_PIN, ledState ? HIGH : LOW);
+      lastLEDBlinkTime = millis();
+    }
+    // Ensure Red LED stays OFF
+    digitalWrite(RED_LED_PIN, LOW);
+  } else {
+    // WiFi is NOT connected - Blue LED must stay ON (steady), absolutely NO blinking
+    wifiConnected = false;
+    digitalWrite(BLUE_LED_PIN, HIGH); // Force Blue LED ON immediately - no blinking allowed
+    lastLEDBlinkTime = millis(); // Reset blink timer to prevent accidental blinking
+    // Ensure Red LED stays OFF
+    digitalWrite(RED_LED_PIN, LOW);
   }
   
   // Background WiFi keep-alive with error handling
@@ -382,18 +599,26 @@ void loop() {
       bool reconnected = ensureWiFi(15000);
       if (reconnected) {
         Serial.println("WiFi: Reconnected successfully");
+        wifiConnected = true;
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("WiFi Restored");
+        // LED will start blinking automatically in main loop (WiFi connected)
         buzz(50, 50, 2);
         delay(1500);
+        
+        // Process offline queue when WiFi is restored
+        processOfflineQueue();
       } else {
         Serial.println("ERROR: WiFi reconnection failed");
+        wifiConnected = false;
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("WiFi Failed");
         lcd.setCursor(0, 1);
         lcd.print("Check Network");
+        digitalWrite(BLUE_LED_PIN, HIGH); // Blue LED ON (steady) when WiFi not connected
+        digitalWrite(RED_LED_PIN, LOW);   // Red LED OFF
         buzz(200, 100, 2);
         delay(2000);
       }
@@ -403,6 +628,12 @@ void loop() {
       lcd.print("Ready");
       lcd.setCursor(0, 1);
       lcd.print("Scan Your ID");
+      // LED will be controlled by WiFi status (blink if connected, ON if not)
+    } else {
+      // WiFi is connected - check if there are pending offline scans
+      if (offlineQueueCount > 0) {
+        processOfflineQueue();
+      }
     }
   }
 }
@@ -421,14 +652,16 @@ void processID(String rawData) {
     lcd.print("No Data Found");
     lcd.setCursor(0, 1);
     lcd.print("Scan Again");
+    ledBlink(200, 100, 2); // Red blinks for error
     buzz(200, 100, 2);
     delay(2000);
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Ready");
-    lcd.setCursor(0, 1);
-    lcd.print("Scan Your ID");
-    return;
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Ready");
+      lcd.setCursor(0, 1);
+      lcd.print("Scan Your ID");
+      // LED will return to WiFi status (blink if connected, ON if not) in loop
+      return;
   }
   
   // Clean the data - remove any unwanted characters
@@ -442,6 +675,7 @@ void processID(String rawData) {
     lcd.print("Invalid Format");
     lcd.setCursor(0, 1);
     lcd.print("Check ID Card");
+    ledBlink(200, 100, 2); // Red blinks for invalid format
     buzz(200, 100, 2);
     delay(2500);
     lcd.clear();
@@ -449,6 +683,7 @@ void processID(String rawData) {
     lcd.print("System Ready!");
     lcd.setCursor(0, 1);
     lcd.print("Scan ID Card");
+    ledOn(); // Keep LED ON as power indicator
     return;
   }
   
@@ -466,6 +701,7 @@ void processID(String rawData) {
     displayData = displayData.substring(0, 13) + "...";
   }
   lcd.print(displayData);
+  ledBlink(100, 0, 1); // Quick LED flash for scan confirmation
   buzz(50, 0, 1); // Quick beep for scan confirmation
   delay(1500);
 
@@ -475,15 +711,57 @@ void processID(String rawData) {
   lcd.print("Processing...");
   lcd.setCursor(0, 1);
   lcd.print("Please Wait");
+  digitalWrite(BLUE_LED_PIN, HIGH); // Blue LED ON during processing
+  digitalWrite(RED_LED_PIN, LOW);   // Red LED OFF
 
-  // Send to backend for validation and attendance save
-  String statusMsg = sendScanToServer(cleanData);
+  // Check WiFi status before sending
+  String statusMsg;
+  if (WiFi.status() == WL_CONNECTED) {
+    // WiFi available - send to server immediately (timestamp = 0 for live scans)
+    statusMsg = sendScanToServer(cleanData, 0);
+  } else {
+    // WiFi not available - store in offline queue
+    Serial.println("WiFi not available - storing scan offline");
+    bool stored = addToOfflineQueue(cleanData, millis());
+    
+    if (stored) {
+      statusMsg = "OK:Stored Offline";
+      Serial.print("Scan stored offline. Queue size: ");
+      Serial.println(offlineQueueCount);
+    } else {
+      statusMsg = "ERR:Queue Full";
+      Serial.println("ERROR: Offline queue is full!");
+    }
+  }
   
   Serial.print("Server response: ");
   Serial.println(statusMsg);
 
   lcd.clear();
-  if (statusMsg.startsWith("DUP:")) {
+  // Stop processing indicator - LED will be controlled by status messages below
+  if (statusMsg == "OK:Stored Offline") {
+    // Stored offline - waiting for WiFi
+    lcd.setCursor(0, 0);
+    lcd.print("Saved Offline");
+    lcd.setCursor(0, 1);
+    lcd.print("Will Sync Later");
+    Serial.print("Result: Stored offline (Queue: ");
+    Serial.print(offlineQueueCount);
+    Serial.println(")");
+    ledBlink(100, 100, 3); // Medium blinks for offline storage
+    buzz(100, 100, 2); // Two beeps for offline
+    // LED will return to WiFi status (ON steady when disconnected) in loop
+  } else if (statusMsg == "ERR:Queue Full") {
+    // Queue is full - cannot store more
+    lcd.setCursor(0, 0);
+    lcd.print("Storage Full!");
+    lcd.setCursor(0, 1);
+    lcd.print("Try Again Later");
+    Serial.println("Result: Offline queue full - cannot store");
+    ledBlink(250, 150, 4); // Slow red blinks for error
+    buzz(200, 150, 3);
+    // LED will return to WiFi status in loop
+  } else if (statusMsg.startsWith("DUP:")) {
     // Duplicate entry - already marked attendance
     String label = statusMsg.substring(4);
     lcd.setCursor(0, 0);
@@ -491,7 +769,9 @@ void processID(String rawData) {
     lcd.setCursor(0, 1);
     lcd.print("Thank You");
     Serial.println("Result: Duplicate entry - " + label);
+    ledBlink(150, 150, 2); // Medium yellow blinks for duplicate
     buzz(100, 100, 2); // Two short beeps for duplicate
+    // LED will return to WiFi status (blink if connected, ON if not) in loop
   } else if (statusMsg.startsWith("OK:")) {
     // Success - attendance marked
     String label = statusMsg.substring(3);
@@ -516,7 +796,9 @@ void processID(String rawData) {
     }
     
     Serial.println("Result: Success - " + label);
+    ledBlink(80, 50, 5); // Fast green blinks for success
     buzz(80, 80, 3); // Three beeps for success
+    // LED will return to WiFi status (blink if connected, ON if not) in loop
   } else if (statusMsg.startsWith("ERR:")) {
     // Error occurred - show user-friendly messages
     String errText = statusMsg.substring(4);
@@ -530,7 +812,9 @@ void processID(String rawData) {
       lcd.setCursor(0, 1);
       lcd.print("Contact Teacher");
       Serial.println("Result: No active session found");
+      ledBlink(200, 200, 3); // Slow red blinks for error
       buzz(150, 100, 2);
+      // LED will return to WiFi status (blink if connected, ON if not) in loop
     } else if (errText.indexOf("Student not") >= 0 || errText.indexOf("not found") >= 0 || 
                errText.indexOf("Invalid") >= 0 || errText.indexOf("invalid") >= 0) {
       // Student not found or invalid ID
@@ -539,7 +823,9 @@ void processID(String rawData) {
       lcd.setCursor(0, 1);
       lcd.print("Check Your ID");
       Serial.println("Result: Student not found - " + errText);
+      ledBlink(250, 150, 4); // Slow red blinks for invalid ID
       buzz(200, 150, 3);
+      // LED will return to WiFi status (blink if connected, ON if not) in loop
     } else if (errText.indexOf("WiFi") >= 0 || errText.indexOf("Network") >= 0 || 
                errText.indexOf("Connection") >= 0 || errText.indexOf("Timeout") >= 0) {
       // Network related errors
@@ -548,7 +834,9 @@ void processID(String rawData) {
       lcd.setCursor(0, 1);
       lcd.print("Try Again");
       Serial.println("Result: Network error - " + errText);
+      ledBlink(200, 200, 3); // Slow red blinks for network error
       buzz(200, 150, 2);
+      // LED will return to WiFi status (blink if connected, ON if not) in loop
     } else if (errText.indexOf("Server") >= 0 || errText.indexOf("Unavailable") >= 0) {
       // Server errors
       lcd.setCursor(0, 0);
@@ -556,7 +844,9 @@ void processID(String rawData) {
       lcd.setCursor(0, 1);
       lcd.print("session found");
       Serial.println("Result: Server error - " + errText);
+      ledBlink(200, 200, 3); // Slow red blinks for server error
       buzz(200, 150, 2);
+      // LED will return to WiFi status (blink if connected, ON if not) in loop
     } else {
       // Generic error - show simplified message
       lcd.setCursor(0, 0);
@@ -564,7 +854,9 @@ void processID(String rawData) {
       lcd.setCursor(0, 1);
       lcd.print("Contact Admin");
       Serial.println("Result: Error - " + errText);
+      ledBlink(250, 150, 4); // Slow red blinks for generic error
       buzz(200, 150, 3);
+      // LED will return to WiFi status (blink if connected, ON if not) in loop
     }
   } else {
     // Unknown response format
@@ -573,7 +865,9 @@ void processID(String rawData) {
     lcd.setCursor(0, 1);
     lcd.print("Contact Admin");
     Serial.println("ERROR: Unknown response format - " + statusMsg);
+    ledBlink(250, 150, 5); // Slow red blinks for system error
     buzz(200, 150, 3);
+    // LED will return to WiFi status (blink if connected, ON if not) in loop
   }
 
   delay(3500);
@@ -584,6 +878,8 @@ void processID(String rawData) {
   lcd.print("Ready");
   lcd.setCursor(0, 1);
   lcd.print("Scan Your ID");
+  // Restore LED to WiFi status: blink if connected, ON if disconnected (handled in loop)
+  // LED will be controlled by WiFi status in main loop
   Serial.println("--- Ready for next scan ---\n");
 }
 
@@ -649,8 +945,15 @@ void logAttendance(String studentID) {
 }
 
 // === Backend POST helper ===
-String sendScanToServer(String registrationNo) {
+String sendScanToServer(String registrationNo, unsigned long timestamp) {
   Serial.println("Sending scan to server...");
+  if (timestamp > 0) {
+    Serial.print("📤 OFFLINE SYNC - Original scan time: ");
+    Serial.print(timestamp);
+    Serial.println("ms");
+  } else {
+    Serial.println("📡 LIVE SCAN");
+  }
   
   // Error handling: Validate input
   if (registrationNo.length() == 0) {
@@ -710,8 +1013,16 @@ String sendScanToServer(String registrationNo) {
   http.addHeader("x-device-key", DEVICE_KEY);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-  // Build JSON body
-  String body = String("{\"registrationNo\":\"") + registrationNo + String("\"}");
+  // Build JSON body with optional timestamp for offline scans
+  String body;
+  if (timestamp > 0) {
+    // Include timestamp for offline scans (helps backend identify offline syncs)
+    body = String("{\"registrationNo\":\"") + registrationNo + 
+           String("\",\"timestamp\":") + String(timestamp) + String("}");
+  } else {
+    // Live scan - no timestamp
+    body = String("{\"registrationNo\":\"") + registrationNo + String("\"}");
+  }
 
   Serial.print("POST URL: ");
   Serial.println(url);
@@ -901,4 +1212,215 @@ String extractErrorMessage(String json) {
   
   Serial.println("No error message found in JSON");
   return String("");
+}
+
+// ===== Offline Queue Management Functions =====
+
+// Add scan to offline queue
+bool addToOfflineQueue(String registrationNo, unsigned long timestamp) {
+  // Check if queue is full
+  if (offlineQueueCount >= MAX_OFFLINE_QUEUE) {
+    Serial.println("ERROR: Offline queue is full!");
+    return false;
+  }
+  
+  // Check for duplicate in queue (prevent same ID within 5 seconds)
+  for (int i = 0; i < offlineQueueCount; i++) {
+    if (offlineQueue[i].registrationNo == registrationNo && 
+        !offlineQueue[i].processed &&
+        (timestamp - offlineQueue[i].timestamp) < 5000) {
+      Serial.println("WARNING: Duplicate scan in offline queue (within 5s)");
+      return false;
+    }
+  }
+  
+  // Add to queue
+  offlineQueue[offlineQueueCount].registrationNo = registrationNo;
+  offlineQueue[offlineQueueCount].timestamp = timestamp;
+  offlineQueue[offlineQueueCount].processed = false;
+  offlineQueueCount++;
+  
+  // Save to persistent storage
+  saveOfflineQueue();
+  
+  Serial.print("Added to offline queue: ");
+  Serial.print(registrationNo);
+  Serial.print(" at ");
+  Serial.println(timestamp);
+  
+  return true;
+}
+
+// Process offline queue when WiFi is available
+void processOfflineQueue() {
+  if (offlineQueueCount == 0) {
+    return;  // Nothing to process
+  }
+  
+  Serial.println("\n=== Processing Offline Queue ===");
+  Serial.print("Queue size: ");
+  Serial.println(offlineQueueCount);
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Syncing Data...");
+  lcd.setCursor(0, 1);
+  lcd.print("Please Wait");
+  
+  int successCount = 0;
+  int failCount = 0;
+  
+  // Process each unprocessed scan
+  for (int i = 0; i < offlineQueueCount; i++) {
+    if (offlineQueue[i].processed) {
+      continue;  // Skip already processed
+    }
+    
+    // Check WiFi before each attempt
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi lost during queue processing");
+      break;
+    }
+    
+    Serial.print("Processing offline scan ");
+    Serial.print(i + 1);
+    Serial.print("/");
+    Serial.print(offlineQueueCount);
+    Serial.print(": ");
+    Serial.println(offlineQueue[i].registrationNo);
+    
+    lcd.setCursor(0, 1);
+    lcd.print("Sync ");
+    lcd.print(i + 1);
+    lcd.print("/");
+    lcd.print(offlineQueueCount);
+    lcd.print("     ");
+    
+    // Send to server with original timestamp
+    String statusMsg = sendScanToServer(offlineQueue[i].registrationNo, offlineQueue[i].timestamp);
+    
+    // Check result
+    if (statusMsg.startsWith("OK:") || statusMsg.startsWith("DUP:")) {
+      // Success or duplicate (both are acceptable)
+      offlineQueue[i].processed = true;
+      successCount++;
+      Serial.println("✓ Offline scan processed successfully");
+    } else {
+      // Failed - will retry next time
+      failCount++;
+      Serial.print("✗ Offline scan failed: ");
+      Serial.println(statusMsg);
+    }
+    
+    delay(500);  // Small delay between requests
+  }
+  
+  // Remove processed scans from queue
+  compactOfflineQueue();
+  
+  // Save updated queue
+  saveOfflineQueue();
+  
+  // Show result
+  Serial.println("=== Queue Processing Complete ===");
+  Serial.print("Success: ");
+  Serial.print(successCount);
+  Serial.print(", Failed: ");
+  Serial.print(failCount);
+  Serial.print(", Remaining: ");
+  Serial.println(offlineQueueCount);
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  if (offlineQueueCount == 0) {
+    lcd.print("Sync Complete!");
+    lcd.setCursor(0, 1);
+    lcd.print("All Data Sent");
+    buzz(80, 80, 2);
+  } else {
+    lcd.print("Partial Sync");
+    lcd.setCursor(0, 1);
+    lcd.print(offlineQueueCount);
+    lcd.print(" Pending");
+    buzz(150, 100, 1);
+  }
+  
+  delay(2000);
+}
+
+// Remove processed scans from queue
+void compactOfflineQueue() {
+  int writeIndex = 0;
+  
+  for (int readIndex = 0; readIndex < offlineQueueCount; readIndex++) {
+    if (!offlineQueue[readIndex].processed) {
+      // Keep unprocessed scans
+      if (writeIndex != readIndex) {
+        offlineQueue[writeIndex] = offlineQueue[readIndex];
+      }
+      writeIndex++;
+    }
+  }
+  
+  offlineQueueCount = writeIndex;
+  Serial.print("Queue compacted. New size: ");
+  Serial.println(offlineQueueCount);
+}
+
+// Save offline queue to persistent storage (survives power loss)
+void saveOfflineQueue() {
+  preferences.putInt("queueCount", offlineQueueCount);
+  
+  for (int i = 0; i < offlineQueueCount; i++) {
+    String keyReg = "reg" + String(i);
+    String keyTime = "time" + String(i);
+    String keyProc = "proc" + String(i);
+    
+    preferences.putString(keyReg.c_str(), offlineQueue[i].registrationNo);
+    preferences.putULong(keyTime.c_str(), offlineQueue[i].timestamp);
+    preferences.putBool(keyProc.c_str(), offlineQueue[i].processed);
+  }
+  
+  Serial.println("Offline queue saved to storage");
+}
+
+// Load offline queue from persistent storage
+void loadOfflineQueue() {
+  offlineQueueCount = preferences.getInt("queueCount", 0);
+  
+  // Validate queue count
+  if (offlineQueueCount > MAX_OFFLINE_QUEUE) {
+    Serial.println("WARNING: Stored queue count exceeds max, resetting");
+    offlineQueueCount = 0;
+    return;
+  }
+  
+  for (int i = 0; i < offlineQueueCount; i++) {
+    String keyReg = "reg" + String(i);
+    String keyTime = "time" + String(i);
+    String keyProc = "proc" + String(i);
+    
+    offlineQueue[i].registrationNo = preferences.getString(keyReg.c_str(), "");
+    offlineQueue[i].timestamp = preferences.getULong(keyTime.c_str(), 0);
+    offlineQueue[i].processed = preferences.getBool(keyProc.c_str(), false);
+    
+    // Validate loaded data
+    if (offlineQueue[i].registrationNo.length() == 0) {
+      Serial.print("WARNING: Invalid data at queue index ");
+      Serial.println(i);
+      offlineQueueCount = i;  // Truncate queue at invalid entry
+      break;
+    }
+  }
+  
+  Serial.print("Loaded ");
+  Serial.print(offlineQueueCount);
+  Serial.println(" scans from storage");
+}
+
+// Clear all offline queue data (for maintenance/debugging)
+void clearOfflineQueue() {
+  offlineQueueCount = 0;
+  preferences.clear();
+  Serial.println("Offline queue cleared");
 }

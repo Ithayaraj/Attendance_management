@@ -22,6 +22,16 @@ export const ingestScan = async (req, res, next) => {
     }
 
     const effectiveTimestamp = timestamp || new Date().toISOString();
+    
+    // Log incoming scan for debugging
+    console.log('\n========================================');
+    console.log('📥 INCOMING SCAN REQUEST');
+    console.log('========================================');
+    console.log('Registration No:', registrationNo);
+    console.log('Timestamp:', effectiveTimestamp);
+    console.log('Device Key:', deviceApiKey);
+    console.log('Source:', timestamp ? '🔄 OFFLINE SYNC' : '📡 LIVE SCAN');
+    console.log('========================================\n');
 
     const result = await processScan(deviceApiKey, registrationNo, effectiveTimestamp, meta);
 
