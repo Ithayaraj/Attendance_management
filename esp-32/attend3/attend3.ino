@@ -96,12 +96,16 @@ struct OfflineScan {
   String registrationNo;
   unsigned long timestamp;  // millis() when scanned
   bool processed;           // Flag to track if sent to server
+  int retryCount;           // Number of retry attempts
 };
 
 #define MAX_OFFLINE_QUEUE 20  // Maximum offline scans to store (adjust based on RAM)
+#define MAX_RETRY_ATTEMPTS 3  // Maximum retry attempts before giving up
 OfflineScan offlineQueue[MAX_OFFLINE_QUEUE];
 int offlineQueueCount = 0;
 Preferences preferences;  // For persistent storage across reboots
+unsigned long lastQueueProcessTime = 0;  // Track when queue was last processed
+#define QUEUE_PROCESS_INTERVAL 30000  // Process queue every 30 seconds (not 5 seconds)
 
 // ===== Buzzer (Active buzzer recommended) =====//18
 // Wiring: Buzzer (+) → GPIO 25 → 220Ω Resistor → Buzzer (-) → GND
@@ -477,10 +481,69 @@ void setup() {
     digitalWrite(RED_LED_PIN, LOW);   // Red LED OFF
   }
   // If WiFi connected, LED will blink continuously in loop()
-  Serial.println("=== System Ready - Waiting for scans ===\n");
+  
+  // Show queue status if there are pending scans
+  if (offlineQueueCount > 0) {
+    Serial.print("⚠️  ");
+    Serial.print(offlineQueueCount);
+    Serial.println(" offline scans pending sync");
+  }
+  
+  Serial.println("=== System Ready - Waiting for scans ===");
+  Serial.println("💡 TIP: To clear offline queue, send 'CLEAR' via Serial Monitor\n");
 }
 
 void loop() {
+  // Check for Serial commands (for debugging/maintenance)
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    cmd.toUpperCase();
+    
+    if (cmd == "CLEAR" || cmd == "CLEAR QUEUE") {
+      Serial.println("\n🗑️  Clearing offline queue...");
+      clearOfflineQueue();
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Queue Cleared!");
+      lcd.setCursor(0, 1);
+      lcd.print("All Data Removed");
+      buzz(100, 100, 2);
+      delay(2000);
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Ready");
+      lcd.setCursor(0, 1);
+      lcd.print("Scan Your ID");
+      Serial.println("✅ Queue cleared successfully\n");
+    } else if (cmd == "STATUS" || cmd == "QUEUE") {
+      Serial.println("\n📊 Queue Status:");
+      Serial.print("   Count: ");
+      Serial.println(offlineQueueCount);
+      for (int i = 0; i < offlineQueueCount; i++) {
+        Serial.print("   [");
+        Serial.print(i);
+        Serial.print("] ");
+        Serial.print(offlineQueue[i].registrationNo);
+        Serial.print(" - Retries: ");
+        Serial.print(offlineQueue[i].retryCount);
+        Serial.print(" - Processed: ");
+        Serial.println(offlineQueue[i].processed ? "Yes" : "No");
+      }
+      Serial.println();
+    } else if (cmd == "SYNC" || cmd == "SYNC NOW") {
+      Serial.println("\n🔄 Forcing queue sync...");
+      lastQueueProcessTime = 0; // Reset cooldown
+      processOfflineQueue();
+    } else if (cmd == "HELP") {
+      Serial.println("\n📖 Available Commands:");
+      Serial.println("   CLEAR - Clear offline queue");
+      Serial.println("   STATUS - Show queue status");
+      Serial.println("   SYNC - Force sync now");
+      Serial.println("   HELP - Show this help\n");
+    }
+  }
+  
   // Error handling: Check for scanner data
   if (GM65Serial.available()) {
     String scannedData = "";
@@ -631,7 +694,8 @@ void loop() {
       // LED will be controlled by WiFi status (blink if connected, ON if not)
     } else {
       // WiFi is connected - check if there are pending offline scans
-      if (offlineQueueCount > 0) {
+      // Only process if cooldown period has passed (prevent recursive loop)
+      if (offlineQueueCount > 0 && (millis() - lastQueueProcessTime >= QUEUE_PROCESS_INTERVAL)) {
         processOfflineQueue();
       }
     }
@@ -1241,6 +1305,7 @@ bool addToOfflineQueue(String registrationNo, unsigned long timestamp) {
   offlineQueue[offlineQueueCount].registrationNo = registrationNo;
   offlineQueue[offlineQueueCount].timestamp = timestamp;
   offlineQueue[offlineQueueCount].processed = false;
+  offlineQueue[offlineQueueCount].retryCount = 0;
   offlineQueueCount++;
   
   // Save to persistent storage
@@ -1259,6 +1324,14 @@ void processOfflineQueue() {
   if (offlineQueueCount == 0) {
     return;  // Nothing to process
   }
+  
+  // Prevent processing too frequently (avoid recursive loop)
+  if (millis() - lastQueueProcessTime < QUEUE_PROCESS_INTERVAL) {
+    Serial.println("⏳ Queue processing cooldown active, skipping...");
+    return;
+  }
+  
+  lastQueueProcessTime = millis();
   
   Serial.println("\n=== Processing Offline Queue ===");
   Serial.print("Queue size: ");
@@ -1302,6 +1375,9 @@ void processOfflineQueue() {
     // Send to server with original timestamp
     String statusMsg = sendScanToServer(offlineQueue[i].registrationNo, offlineQueue[i].timestamp);
     
+    // Increment retry count
+    offlineQueue[i].retryCount++;
+    
     // Check result
     if (statusMsg.startsWith("OK:") || statusMsg.startsWith("DUP:")) {
       // Success or duplicate (both are acceptable)
@@ -1309,30 +1385,52 @@ void processOfflineQueue() {
       successCount++;
       Serial.println("✓ Offline scan processed successfully");
     } else {
-      // Failed - will retry next time
+      // Failed - check if we should retry or give up
       failCount++;
-      Serial.print("✗ Offline scan failed: ");
+      Serial.print("✗ Offline scan failed (attempt ");
+      Serial.print(offlineQueue[i].retryCount);
+      Serial.print("/");
+      Serial.print(MAX_RETRY_ATTEMPTS);
+      Serial.print("): ");
       Serial.println(statusMsg);
       
-      // Show error on LCD briefly
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Sync Failed:");
-      lcd.setCursor(0, 1);
-      String errMsg = statusMsg.substring(4); // Remove "ERR:" prefix
-      if (errMsg.length() > 16) {
-        lcd.print(errMsg.substring(0, 16));
-      } else {
-        lcd.print(errMsg);
+      // Show error on LCD briefly (only on first failure)
+      if (offlineQueue[i].retryCount == 1) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Sync Failed:");
+        lcd.setCursor(0, 1);
+        String errMsg = statusMsg.substring(4); // Remove "ERR:" prefix
+        if (errMsg.length() > 16) {
+          lcd.print(errMsg.substring(0, 16));
+        } else {
+          lcd.print(errMsg);
+        }
+        delay(1500);
       }
-      delay(2000);
       
-      // If error is "No session" or similar, mark as processed anyway
-      // (don't keep retrying forever for old scans with no session)
+      // Check if we should give up on this scan
+      bool shouldGiveUp = false;
+      
+      // Give up if max retries reached
+      if (offlineQueue[i].retryCount >= MAX_RETRY_ATTEMPTS) {
+        Serial.println("⚠️  Max retries reached, giving up on this scan");
+        shouldGiveUp = true;
+      }
+      
+      // Give up immediately for certain errors (no point retrying)
       if (statusMsg.indexOf("No session") >= 0 || 
           statusMsg.indexOf("No active") >= 0 ||
-          statusMsg.indexOf("Session ended") >= 0) {
-        Serial.println("⚠️  Marking as processed (no valid session available)");
+          statusMsg.indexOf("No Class") >= 0 ||
+          statusMsg.indexOf("Session ended") >= 0 ||
+          statusMsg.indexOf("not found") >= 0 ||
+          statusMsg.indexOf("Not Found") >= 0 ||
+          statusMsg.indexOf("ID") >= 0) {
+        Serial.println("⚠️  Permanent error detected, giving up on this scan");
+        shouldGiveUp = true;
+      }
+      
+      if (shouldGiveUp) {
         offlineQueue[i].processed = true;
         successCount++; // Count as "success" to remove from queue
         failCount--; // Don't count as failure
@@ -1402,10 +1500,12 @@ void saveOfflineQueue() {
     String keyReg = "reg" + String(i);
     String keyTime = "time" + String(i);
     String keyProc = "proc" + String(i);
+    String keyRetry = "retry" + String(i);
     
     preferences.putString(keyReg.c_str(), offlineQueue[i].registrationNo);
     preferences.putULong(keyTime.c_str(), offlineQueue[i].timestamp);
     preferences.putBool(keyProc.c_str(), offlineQueue[i].processed);
+    preferences.putInt(keyRetry.c_str(), offlineQueue[i].retryCount);
   }
   
   Serial.println("Offline queue saved to storage");
@@ -1426,10 +1526,12 @@ void loadOfflineQueue() {
     String keyReg = "reg" + String(i);
     String keyTime = "time" + String(i);
     String keyProc = "proc" + String(i);
+    String keyRetry = "retry" + String(i);
     
     offlineQueue[i].registrationNo = preferences.getString(keyReg.c_str(), "");
     offlineQueue[i].timestamp = preferences.getULong(keyTime.c_str(), 0);
     offlineQueue[i].processed = preferences.getBool(keyProc.c_str(), false);
+    offlineQueue[i].retryCount = preferences.getInt(keyRetry.c_str(), 0);
     
     // Validate loaded data
     if (offlineQueue[i].registrationNo.length() == 0) {

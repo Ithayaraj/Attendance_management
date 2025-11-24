@@ -2,7 +2,7 @@ import { Student } from '../models/Student.js';
 
 export const getStudents = async (req, res, next) => {
   try {
-    const { search = '', page = 1, limit = 50, regPrefix = '', department = '' } = req.query;
+    const { search = '', page = 1, limit = 50, regPrefix = '', department = '', year = '', semester = '' } = req.query;
 
     const query = {};
     const conditions = [];
@@ -14,6 +14,16 @@ export const getStudents = async (req, res, next) => {
       conditions.push({
         registrationNo: { $regex: `^${escapedPrefix}`, $options: 'i' }
       });
+    }
+
+    // Filter by year if provided
+    if (year) {
+      conditions.push({ year: parseInt(year) });
+    }
+
+    // Filter by semester if provided
+    if (semester) {
+      conditions.push({ semester: parseInt(semester) });
     }
 
     // Filter by department if provided (case-insensitive, with flexible matching)
@@ -76,7 +86,7 @@ export const getStudents = async (req, res, next) => {
 
     // Debug logging
     console.log('Student query:', JSON.stringify(query, null, 2));
-    console.log('Query params:', { regPrefix, department, search, page, limit });
+    console.log('Query params:', { regPrefix, department, year, semester, search, page, limit });
 
     const total = await Student.countDocuments(query);
     const students = await Student.find(query)
