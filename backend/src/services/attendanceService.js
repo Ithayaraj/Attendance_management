@@ -51,10 +51,31 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
   }
 
   const scannedAt = new Date(timestamp);
+  
+  // IMPORTANT: For offline scans, timestamp might be in milliseconds since ESP32 boot (millis())
+  // Check if timestamp looks like millis() (small number) vs actual timestamp (large number)
+  const isMillisTimestamp = timestamp && typeof timestamp === 'number' && timestamp < 10000000000;
+  
+  let actualScanDate;
+  if (isMillisTimestamp) {
+    // This is millis() from ESP32 - use current date/time instead
+    console.log('⚠️  Timestamp appears to be millis(), using current time');
+    actualScanDate = new Date();
+  } else {
+    // This is a real timestamp or ISO string
+    actualScanDate = scannedAt;
+  }
+  
   // Use server local date (not UTC) to match how sessions are stored (YYYY-MM-DD)
-  const localIso = new Date(scannedAt.getTime() - scannedAt.getTimezoneOffset() * 60000).toISOString();
+  const localIso = new Date(actualScanDate.getTime() - actualScanDate.getTimezoneOffset() * 60000).toISOString();
   const scannedDate = localIso.split('T')[0];
-  const scannedTime = formatTime(scannedAt);
+  const scannedTime = formatTime(actualScanDate);
+  
+  console.log('📅 Scan timestamp analysis:');
+  console.log('   Raw timestamp:', timestamp);
+  console.log('   Is millis():', isMillisTimestamp);
+  console.log('   Actual scan date:', scannedDate);
+  console.log('   Actual scan time:', scannedTime);
 
   // Convert to numbers to ensure type consistency
   const studentYear = Number(student.year);
@@ -69,12 +90,29 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
   // Step 1: Find active sessions for the scanned date, matching student's year and semester
   // CRITICAL: This ensures only courses for the student's batch (year + semester) are considered
   // Students from other batches will be automatically rejected here
+  // For offline syncs, also check recent past dates (yesterday, day before)
+  const datesToCheck = [scannedDate];
+  
+  // If this looks like an offline sync (millis timestamp), also check yesterday and day before
+  if (isMillisTimestamp) {
+    const yesterday = new Date(actualScanDate);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    
+    const dayBefore = new Date(actualScanDate);
+    dayBefore.setDate(dayBefore.getDate() - 2);
+    const dayBeforeStr = dayBefore.toISOString().split('T')[0];
+    
+    datesToCheck.push(yesterdayStr, dayBeforeStr);
+    console.log('🔍 Checking multiple dates for offline sync:', datesToCheck);
+  }
+  
   const activeSessions = await ClassSession.find({
-    date: scannedDate,
+    date: { $in: datesToCheck },
     year: studentYear,
     semester: studentSemester,
-    status: { $in: ['live', 'scheduled'] }
-  }).populate('courseId');
+    status: { $in: ['live', 'scheduled', 'completed'] } // Include completed sessions for offline syncs
+  }).populate('courseId').sort({ date: -1 }); // Most recent first
 
   console.log(`Found ${activeSessions.length} active sessions for Y${studentYear}S${studentSemester}`);
   activeSessions.forEach(s => {

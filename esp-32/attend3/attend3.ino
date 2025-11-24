@@ -1016,9 +1016,12 @@ String sendScanToServer(String registrationNo, unsigned long timestamp) {
   // Build JSON body with optional timestamp for offline scans
   String body;
   if (timestamp > 0) {
-    // Include timestamp for offline scans (helps backend identify offline syncs)
+    // For offline scans, send millis() timestamp
+    // Backend will detect this and use current date for the scan
+    // This allows offline scans to be processed even if they're from yesterday
     body = String("{\"registrationNo\":\"") + registrationNo + 
-           String("\",\"timestamp\":") + String(timestamp) + String("}");
+           String("\",\"timestamp\":") + String(timestamp) + 
+           String(",\"offline\":true}");
   } else {
     // Live scan - no timestamp
     body = String("{\"registrationNo\":\"") + registrationNo + String("\"}");
@@ -1310,6 +1313,30 @@ void processOfflineQueue() {
       failCount++;
       Serial.print("✗ Offline scan failed: ");
       Serial.println(statusMsg);
+      
+      // Show error on LCD briefly
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Sync Failed:");
+      lcd.setCursor(0, 1);
+      String errMsg = statusMsg.substring(4); // Remove "ERR:" prefix
+      if (errMsg.length() > 16) {
+        lcd.print(errMsg.substring(0, 16));
+      } else {
+        lcd.print(errMsg);
+      }
+      delay(2000);
+      
+      // If error is "No session" or similar, mark as processed anyway
+      // (don't keep retrying forever for old scans with no session)
+      if (statusMsg.indexOf("No session") >= 0 || 
+          statusMsg.indexOf("No active") >= 0 ||
+          statusMsg.indexOf("Session ended") >= 0) {
+        Serial.println("⚠️  Marking as processed (no valid session available)");
+        offlineQueue[i].processed = true;
+        successCount++; // Count as "success" to remove from queue
+        failCount--; // Don't count as failure
+      }
     }
     
     delay(500);  // Small delay between requests
