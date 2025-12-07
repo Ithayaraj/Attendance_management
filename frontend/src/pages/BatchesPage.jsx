@@ -305,7 +305,7 @@ export const BatchesPage = () => {
         }
       }
       
-      await apiClient.put(`/api/batches/${editing._id}`, { 
+      const response = await apiClient.put(`/api/batches/${editing._id}`, { 
         startYear: editing.startYear, 
         name: `${editing.startYear} Batch`,
         faculty: faculty,
@@ -314,9 +314,17 @@ export const BatchesPage = () => {
         currentSemester: editing.currentSemester
       });
       
-      showSuccess('Batch updated successfully!');
+      // Show success message with student update count if available
+      if (response.studentsUpdated !== undefined) {
+        showSuccess(`Batch updated successfully! ${response.studentsUpdated} student(s) have been updated to Year ${editing.currentYear}, Semester ${editing.currentSemester}.`);
+      } else {
+        showSuccess('Batch updated successfully!');
+      }
+      
       setEditing(null);
       sessionStorage.removeItem(CACHE_KEY);
+      // Clear students cache as well since they may have been updated
+      sessionStorage.removeItem('students_batches_cache');
       await load(false);
     } catch (e) {
       showError(e.message || 'Failed to update');
