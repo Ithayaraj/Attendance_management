@@ -23,6 +23,7 @@ export const StudentsPage = ({ onViewStudent }) => {
   const [importResults, setImportResults] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingStudent, setViewingStudent] = useState(null);
+  const [selectedStudents, setSelectedStudents] = useState([]);
 
   const [formData, setFormData] = useState({
     registrationNo: '',
@@ -34,15 +35,8 @@ export const StudentsPage = ({ onViewStudent }) => {
     phone: '',
     address: ''
   });
-  const [selectedBatchYear, setSelectedBatchYear] = useState('');
-  const [selectedFaculty, setSelectedFaculty] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('');
-  const [selectedYear, setSelectedYear] = useState('all');
-  const [selectedSemester, setSelectedSemester] = useState('all');
+  const [selectedBatch, setSelectedBatch] = useState(null);
   const [regSuffix, setRegSuffix] = useState('');
-  const [quickSearch, setQuickSearch] = useState('');
-  const [quickSearchResults, setQuickSearchResults] = useState([]);
-  const [quickSearchLoading, setQuickSearchLoading] = useState(false);
 
   // Faculty and Department structure with prefixes
   const facultyStructure = {
@@ -70,56 +64,23 @@ export const StudentsPage = ({ onViewStudent }) => {
     }
   };
 
-  const availableDepartments = useMemo(() => {
-    if (!selectedFaculty || !facultyStructure[selectedFaculty]) return [];
-    return facultyStructure[selectedFaculty].departments;
-  }, [selectedFaculty]);
+  // Get department code from selected batch
+  const deptCode = useMemo(() => {
+    if (!selectedBatch) return '';
+    const faculty = facultyStructure[selectedBatch.faculty];
+    if (!faculty) return '';
+    const dept = faculty.departments.find(d => d.name === selectedBatch.department);
+    return dept?.code || '';
+  }, [selectedBatch]);
+
+  // Generate registration prefix
+  const regPrefix = useMemo(() => {
+    if (!selectedBatch || !deptCode) return '';
+    return `${selectedBatch.startYear}/${deptCode}/`;
+  }, [selectedBatch, deptCode]);
 
   const BATCHES_CACHE_KEY = 'students_batches_cache';
   const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-  // Quick search by registration number
-  useEffect(() => {
-    const searchByRegNo = async () => {
-      // Disable quick search when filters are active
-      if (selectedBatchYear || selectedFaculty || selectedDepartment) {
-        setQuickSearchResults([]);
-        setQuickSearch('');
-        return;
-      }
-      
-      if (!quickSearch.trim()) {
-        setQuickSearchResults([]);
-        return;
-      }
-
-      try {
-        setQuickSearchLoading(true);
-        const params = new URLSearchParams({
-          search: quickSearch.trim(),
-          page: '1',
-          limit: '50'
-        });
-
-        const url = `/api/students?${params.toString()}`;
-        const res = await apiClient.get(url);
-        const studentsList = res?.data?.students || [];
-        setQuickSearchResults(studentsList);
-      } catch (error) {
-        console.error('Error in quick search:', error);
-        setQuickSearchResults([]);
-      } finally {
-        setQuickSearchLoading(false);
-      }
-    };
-
-    // Debounce search
-    const timer = setTimeout(() => {
-      searchByRegNo();
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [quickSearch, selectedBatchYear, selectedFaculty, selectedDepartment]);
 
   useEffect(() => {
     const load = async () => {
@@ -173,38 +134,18 @@ export const StudentsPage = ({ onViewStudent }) => {
     load();
   }, []);
 
-  const selectedDeptInfo = useMemo(() => {
-    if (!selectedDepartment || !selectedFaculty) return null;
-    return availableDepartments.find(d => d.name === selectedDepartment);
-  }, [selectedDepartment, selectedFaculty, availableDepartments]);
-
-  const deptCode = useMemo(() => {
-    return selectedDeptInfo?.code || '';
-  }, [selectedDeptInfo]);
-
-  const regPrefix = useMemo(() => {
-    if (!selectedBatchYear || !deptCode) return '';
-    return `${selectedBatchYear}/${deptCode}/`;
-  }, [selectedBatchYear, deptCode]);
-
   const STUDENTS_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
-  // Fetch students from database when filters are selected
+  // Fetch students from database when batch is selected
   useEffect(() => {
     const loadStudents = async () => {
-      if (!selectedBatchYear || !selectedFaculty || !selectedDepartment || !regPrefix) {
-        setStudents([]);
-        return;
-      }
-      
-      // Year and Semester are optional now (can be "all")
-      if (!selectedYear || !selectedSemester) {
+      if (!selectedBatch || !regPrefix) {
         setStudents([]);
         return;
       }
 
-      // Create cache key based on filters (but not search term for main cache)
-      const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}_${selectedYear}_${selectedSemester}`;
+      // Create cache key based on batch ID
+      const cacheKey = `students_cache_${selectedBatch._id}`;
       
       // Check cache first (only if no search term)
       if (!searchTerm.trim()) {
@@ -238,18 +179,12 @@ export const StudentsPage = ({ onViewStudent }) => {
         setLoading(true);
         const params = new URLSearchParams({
           regPrefix: regPrefix,
-          department: selectedDepartment,
+          department: selectedBatch.department,
+          year: selectedBatch.currentYear,
+          semester: selectedBatch.currentSemester,
           page: '1',
           limit: '1000'
         });
-        
-        // Only add year and semester if not "all"
-        if (selectedYear && selectedYear !== 'all') {
-          params.append('year', selectedYear);
-        }
-        if (selectedSemester && selectedSemester !== 'all') {
-          params.append('semester', selectedSemester);
-        }
         
         if (searchTerm.trim()) {
           params.append('search', searchTerm);
@@ -262,7 +197,7 @@ export const StudentsPage = ({ onViewStudent }) => {
         
         // Cache the data (only if no search term)
         if (!searchTerm.trim()) {
-          const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}_${selectedYear}_${selectedSemester}`;
+          const cacheKey = `students_cache_${selectedBatch._id}`;
           sessionStorage.setItem(cacheKey, JSON.stringify({
             data: studentsList,
             timestamp: Date.now()
@@ -277,11 +212,11 @@ export const StudentsPage = ({ onViewStudent }) => {
     };
 
     loadStudents();
-  }, [selectedBatchYear, selectedFaculty, selectedDepartment, regPrefix, selectedYear, selectedSemester, searchTerm]);
+  }, [selectedBatch, regPrefix, searchTerm]);
 
   // Reload function for manual refresh after create/delete
   const reloadStudents = async () => {
-    if (!selectedBatchYear || !selectedFaculty || !selectedDepartment || !regPrefix || !selectedYear || !selectedSemester) {
+    if (!selectedBatch || !regPrefix) {
       return;
     }
 
@@ -289,18 +224,12 @@ export const StudentsPage = ({ onViewStudent }) => {
       setLoading(true);
       const params = new URLSearchParams({
         regPrefix: regPrefix,
-        department: selectedDepartment,
+        department: selectedBatch.department,
+        year: selectedBatch.currentYear,
+        semester: selectedBatch.currentSemester,
         page: '1',
         limit: '1000'
       });
-      
-      // Only add year and semester if not "all"
-      if (selectedYear && selectedYear !== 'all') {
-        params.append('year', selectedYear);
-      }
-      if (selectedSemester && selectedSemester !== 'all') {
-        params.append('semester', selectedSemester);
-      }
       
       if (searchTerm.trim()) {
         params.append('search', searchTerm);
@@ -313,7 +242,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       
       // Update cache (only if no search term)
       if (!searchTerm.trim()) {
-        const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}_${selectedYear}_${selectedSemester}`;
+        const cacheKey = `students_cache_${selectedBatch._id}`;
         sessionStorage.setItem(cacheKey, JSON.stringify({
           data: studentsList,
           timestamp: Date.now()
@@ -332,17 +261,13 @@ export const StudentsPage = ({ onViewStudent }) => {
     try {
       const payload = { ...formData };
       if (!editingStudent) {
-        if (!selectedBatchYear) { showWarning('Please select a batch at the top of the page'); return; }
-        if (!selectedFaculty) { showWarning('Please select a faculty at the top of the page'); return; }
-        if (!selectedDepartment) { showWarning('Please select a department at the top of the page'); return; }
-        if (!selectedYear || selectedYear === 'all') { showWarning('Please select a specific year (not "All Years") to add a student'); return; }
-        if (!selectedSemester || selectedSemester === 'all') { showWarning('Please select a specific semester (not "All Semesters") to add a student'); return; }
+        if (!selectedBatch) { showWarning('Please select a batch'); return; }
         if (!regPrefix) { showWarning('Please complete registration number prefix'); return; }
         if (!regSuffix) { showWarning('Please enter registration number suffix'); return; }
         payload.registrationNo = `${regPrefix}${regSuffix}`;
-        payload.department = selectedDepartment;
-        payload.year = parseInt(selectedYear);
-        payload.semester = parseInt(selectedSemester);
+        payload.department = selectedBatch.department;
+        payload.year = selectedBatch.currentYear;
+        payload.semester = selectedBatch.currentSemester;
       }
       if (editingStudent) {
         await apiClient.put(`/api/students/${editingStudent._id}`, payload);
@@ -365,7 +290,7 @@ export const StudentsPage = ({ onViewStudent }) => {
       });
       setRegSuffix('');
       // Clear cache and reload
-      const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}_${selectedYear}_${selectedSemester}`;
+      const cacheKey = `students_cache_${selectedBatch._id}`;
       sessionStorage.removeItem(cacheKey);
       await reloadStudents();
     } catch (error) {
@@ -394,12 +319,58 @@ export const StudentsPage = ({ onViewStudent }) => {
       try {
         await apiClient.delete(`/api/students/${id}`);
         // Clear cache and reload
-        const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}_${selectedYear}_${selectedSemester}`;
-        sessionStorage.removeItem(cacheKey);
+        if (selectedBatch) {
+          const cacheKey = `students_cache_${selectedBatch._id}`;
+          sessionStorage.removeItem(cacheKey);
+        }
         await reloadStudents();
       } catch (error) {
         showError(error.message || 'Failed to delete student', 'Delete Error');
       }
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedStudents.length === 0) {
+      showWarning('Please select students to delete');
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to delete ${selectedStudents.length} student(s)? This action cannot be undone.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      // Delete all selected students
+      const deletePromises = selectedStudents.map(id => 
+        apiClient.delete(`/api/students/${id}`)
+      );
+      
+      await Promise.all(deletePromises);
+      showSuccess(`Successfully deleted ${selectedStudents.length} student(s)!`);
+      setSelectedStudents([]);
+      
+      // Clear cache and reload
+      if (selectedBatch) {
+        const cacheKey = `students_cache_${selectedBatch._id}`;
+        sessionStorage.removeItem(cacheKey);
+      }
+      await reloadStudents();
+    } catch (error) {
+      showError(error.message || 'Failed to delete students', 'Delete Error');
+    }
+  };
+
+  const toggleSelectStudent = (id) => {
+    setSelectedStudents(prev => 
+      prev.includes(id) ? prev.filter(sid => sid !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedStudents.length === students.length) {
+      setSelectedStudents([]);
+    } else {
+      setSelectedStudents(students.map(s => s._id));
     }
   };
 
@@ -439,8 +410,10 @@ export const StudentsPage = ({ onViewStudent }) => {
       setBulkEditData({ year: '', semester: '' });
       
       // Clear cache and reload
-      const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}_${selectedYear}_${selectedSemester}`;
-      sessionStorage.removeItem(cacheKey);
+      if (selectedBatch) {
+        const cacheKey = `students_cache_${selectedBatch._id}`;
+        sessionStorage.removeItem(cacheKey);
+      }
       await reloadStudents();
     } catch (error) {
       showError(error.message || 'Failed to update students', 'Update Failed');
@@ -455,8 +428,8 @@ export const StudentsPage = ({ onViewStudent }) => {
       return;
     }
 
-    // Create CSV content
-    const headers = ['registrationNo', 'name', 'email', 'department', 'year', 'semester', 'phone', 'address'];
+    // Create CSV content (without year and semester as they come from batch)
+    const headers = ['registrationNo', 'name', 'email', 'phone', 'address'];
     const csvContent = [
       headers.join(','),
       ...students.map(student => 
@@ -473,7 +446,7 @@ export const StudentsPage = ({ onViewStudent }) => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `students_${selectedBatchYear}_${selectedDepartment}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `students_${selectedBatch.startYear}_${selectedBatch.department}_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -488,13 +461,8 @@ export const StudentsPage = ({ onViewStudent }) => {
       return;
     }
 
-    if (!selectedBatchYear || !selectedFaculty || !selectedDepartment) {
-      showWarning('Please select Batch, Faculty, and Department first');
-      return;
-    }
-    
-    if (selectedYear === 'all' || selectedSemester === 'all') {
-      showWarning('Please select specific Year and Semester (not "All") for importing students');
+    if (!selectedBatch) {
+      showWarning('Please select a batch first');
       return;
     }
 
@@ -512,7 +480,7 @@ export const StudentsPage = ({ onViewStudent }) => {
 
       // Parse CSV
       const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-      const requiredHeaders = ['registrationNo', 'name', 'email', 'department', 'year', 'semester'];
+      const requiredHeaders = ['registrationNo', 'name', 'email'];
       
       // Validate headers
       const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
@@ -557,14 +525,10 @@ export const StudentsPage = ({ onViewStudent }) => {
           continue;
         }
 
-        // Convert year and semester to numbers
-        student.year = parseInt(student.year);
-        student.semester = parseInt(student.semester);
-
-        if (isNaN(student.year) || isNaN(student.semester)) {
-          errors.push(`Line ${i + 1}: Invalid year or semester`);
-          continue;
-        }
+        // Add year, semester, and department from selected batch
+        student.department = selectedBatch.department;
+        student.year = selectedBatch.currentYear;
+        student.semester = selectedBatch.currentSemester;
 
         studentsToImport.push(student);
       }
@@ -597,8 +561,10 @@ export const StudentsPage = ({ onViewStudent }) => {
 
       if (successCount > 0) {
         // Clear cache and reload
-        const cacheKey = `students_cache_${selectedBatchYear}_${selectedFaculty}_${selectedDepartment}_${selectedYear}_${selectedSemester}`;
-        sessionStorage.removeItem(cacheKey);
+        if (selectedBatch) {
+          const cacheKey = `students_cache_${selectedBatch._id}`;
+          sessionStorage.removeItem(cacheKey);
+        }
         await reloadStudents();
       }
 
@@ -610,7 +576,7 @@ export const StudentsPage = ({ onViewStudent }) => {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="flex justify-between items-center mb-4">
         <div>
           <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Student Management</h3>
@@ -618,134 +584,12 @@ export const StudentsPage = ({ onViewStudent }) => {
         </div>
       </div>
 
-      {/* Quick Search Bar */}
-      <div className={`mb-6 rounded-xl p-4 border transition-all ${
-        (selectedBatchYear || selectedFaculty || selectedDepartment) 
-          ? 'bg-slate-100 dark:bg-slate-800/50 border-slate-300 dark:border-slate-700 opacity-60' 
-          : 'bg-gradient-to-r from-cyan-50 to-blue-50 dark:from-slate-800 dark:to-slate-800 border-cyan-200 dark:border-slate-700'
-      }`}>
-        <div className="relative">
-          <Search className={`w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 ${
-            (selectedBatchYear || selectedFaculty || selectedDepartment)
-              ? 'text-slate-400 dark:text-slate-600'
-              : 'text-cyan-600 dark:text-cyan-400'
-          }`} />
-          <input
-            type="text"
-            placeholder={
-              (selectedBatchYear || selectedFaculty || selectedDepartment)
-                ? "Quick search is disabled when filters are active. Clear filters to use quick search."
-                : "Quick search by registration number, name, or email..."
-            }
-            value={quickSearch}
-            onChange={(e) => setQuickSearch(e.target.value)}
-            disabled={selectedBatchYear || selectedFaculty || selectedDepartment}
-            className="w-full pl-10 pr-10 py-3 bg-white dark:bg-slate-900 border border-cyan-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800"
-          />
-          {quickSearch && (
-            <button
-              onClick={() => setQuickSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-              title="Clear search"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-          {quickSearchLoading && (
-            <div className="absolute right-10 top-1/2 -translate-y-1/2">
-              <LoadingSpinner size="sm" className="text-cyan-600" />
-            </div>
-          )}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3">
+        <div className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+          Select Batch to View Students
         </div>
-        
-        {/* Quick Search Results */}
-        {quickSearch && quickSearchResults.length > 0 && (
-          <div className="mt-3 bg-white dark:bg-slate-900 rounded-lg border border-cyan-200 dark:border-slate-700 max-h-96 overflow-y-auto">
-            <div className="p-2">
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-400 px-2 py-1">
-                Found {quickSearchResults.length} student(s)
-              </p>
-            </div>
-            <div className="divide-y divide-slate-200 dark:divide-slate-700">
-              {quickSearchResults.map((student) => (
-                <div
-                  key={student._id}
-                  className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-sm font-semibold text-cyan-600 dark:text-cyan-400">
-                        {student.registrationNo}
-                      </span>
-                      <span 
-                        className="text-sm font-medium text-slate-900 dark:text-white inline-block max-w-[200px] truncate cursor-help" 
-                        title={student.name}
-                      >
-                        {student.name}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      <span>{student.email}</span>
-                      <span>•</span>
-                      <span>{student.department}</span>
-                      <span>•</span>
-                      <span>Year {student.year} / Sem {student.semester}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setViewingStudent(student);
-                        setShowViewModal(true);
-                        setQuickSearch('');
-                      }}
-                      className="p-2 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded-lg transition-colors"
-                      title="View Details"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleEdit(student);
-                        setQuickSearch('');
-                      }}
-                      className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleDelete(student._id);
-                        setQuickSearch('');
-                      }}
-                      className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {quickSearch && !quickSearchLoading && quickSearchResults.length === 0 && (
-          <div className="mt-3 bg-white dark:bg-slate-900 rounded-lg border border-cyan-200 dark:border-slate-700 p-4 text-center text-sm text-slate-600 dark:text-slate-400">
-            No students found matching "{quickSearch}"
-          </div>
-        )}
-      </div>
-
-      <div className="flex justify-between items-center mb-6">
-        <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
-          Filter by Batch, Faculty, Department, Year & Semester
-        </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          {selectedBatchYear && selectedFaculty && selectedDepartment && selectedYear && selectedSemester && selectedYear !== 'all' && selectedSemester !== 'all' && (
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          {selectedBatch && (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
@@ -771,42 +615,50 @@ export const StudentsPage = ({ onViewStudent }) => {
               )}
             </div>
           )}
-          {selectedBatchYear && selectedFaculty && selectedDepartment && selectedYear && selectedSemester && students.length > 0 && (
-            <button
-              onClick={() => {
-                setBulkEditData({ year: '', semester: '' });
-                setShowBulkEditModal(true);
-              }}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
-            >
-              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline">Bulk Edit</span>
-              <span className="sm:hidden">Edit All</span>
-            </button>
+          {selectedBatch && students.length > 0 && (
+            <>
+              <button
+                onClick={() => {
+                  setBulkEditData({ year: '', semester: '' });
+                  setShowBulkEditModal(true);
+                }}
+                className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
+              >
+                <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden sm:inline">Bulk Edit</span>
+                <span className="sm:hidden">Edit All</span>
+              </button>
+              {selectedStudents.length > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
+                >
+                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="hidden sm:inline">Delete Selected ({selectedStudents.length})</span>
+                  <span className="sm:hidden">Delete ({selectedStudents.length})</span>
+                </button>
+              )}
+            </>
           )}
           <button
             onClick={() => {
-              if (!selectedBatchYear) { showWarning('Please select a batch first'); return; }
-              if (!selectedFaculty) { showWarning('Please select a faculty first'); return; }
-              if (!selectedDepartment) { showWarning('Please select a department first'); return; }
-              if (!selectedYear || selectedYear === 'all') { showWarning('Please select a specific year (not "All Years") to add a student'); return; }
-              if (!selectedSemester || selectedSemester === 'all') { showWarning('Please select a specific semester (not "All Semesters") to add a student'); return; }
+              if (!selectedBatch) { showWarning('Please select a batch first'); return; }
               setEditingStudent(null);
               setFormData({
                 registrationNo: '',
                 name: '',
                 email: '',
-                department: selectedDepartment,
-                year: parseInt(selectedYear),
-                semester: parseInt(selectedSemester),
+                department: selectedBatch.department,
+                year: selectedBatch.currentYear,
+                semester: selectedBatch.currentSemester,
                 phone: '',
                 address: ''
               });
               setRegSuffix('');
               setShowAddModal(true);
             }}
-            className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base ${(!selectedBatchYear || !selectedFaculty || !selectedDepartment || !selectedYear || !selectedSemester || selectedYear === 'all' || selectedSemester === 'all') ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={!selectedBatchYear || !selectedFaculty || !selectedDepartment || !selectedYear || !selectedSemester || selectedYear === 'all' || selectedSemester === 'all'}
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base ${!selectedBatch ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!selectedBatch}
           >
             <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
             <span className="hidden sm:inline">Add Student</span>
@@ -815,123 +667,36 @@ export const StudentsPage = ({ onViewStudent }) => {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-3 sm:p-4 mb-4 sm:mb-6">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 flex-wrap">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Batch:</label>
-            <div className="relative w-full sm:w-auto">
-              <CustomSelect
-              value={selectedBatchYear}
-                onChange={(e) => setSelectedBatchYear(e.target.value)}
-                disabled={loadingBatches}
-                loading={loadingBatches}
-                placeholder={loadingBatches ? 'Loading batches...' : 'Select Batch'}
-                options={[
-                  { value: '', label: loadingBatches ? 'Loading batches...' : (batches.length === 0 ? 'No batches available' : 'Select Batch') },
-                  ...(Array.isArray(batches) ? batches.map((b) => ({
-                    value: String(b.startYear),
-                    label: b.name || b.startYear
-                  })) : [])
-                ]}
-                className="w-full sm:w-auto"
-              />
-              {(loading && selectedBatchYear) && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <LoadingSpinner size="sm" className="text-cyan-600" />
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Faculty:</label>
+      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-end">
+          <div className="lg:col-span-2">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Batch:</label>
             <CustomSelect
-              value={selectedFaculty}
+              value={selectedBatch?._id || ''}
               onChange={(e) => {
-                setSelectedFaculty(e.target.value);
-                setSelectedDepartment('');
-              }}
-              placeholder="Select Faculty"
-              options={[
-                { value: '', label: 'Select Faculty' },
-                { value: 'Faculty of Applied Science', label: 'Faculty of Applied Science' },
-                { value: 'Faculty of Business Studies', label: 'Faculty of Business Studies' },
-                { value: 'Faculty of Technological Studies', label: 'Faculty of Technological Studies' }
-              ]}
-              className="w-full sm:w-auto"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Department:</label>
-            <CustomSelect
-              value={selectedDepartment}
-              onChange={(e) => setSelectedDepartment(e.target.value)}
-              disabled={!selectedFaculty}
-              placeholder={selectedFaculty ? 'Select Department' : 'Select Faculty first'}
-              options={[
-                { value: '', label: selectedFaculty ? 'Select Department' : 'Select Faculty first' },
-                ...availableDepartments.map((dept) => ({
-                  value: dept.name,
-                  label: dept.name
-                }))
-              ]}
-              className="w-full sm:w-auto"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Year:</label>
-            <CustomSelect
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              disabled={!selectedDepartment}
-              placeholder={selectedDepartment ? 'Select Year' : 'Select Department first'}
-              options={[
-                { value: 'all', label: 'All Years' },
-                { value: '1', label: 'Year 1' },
-                { value: '2', label: 'Year 2' },
-                { value: '3', label: 'Year 3' },
-                { value: '4', label: 'Year 4' }
-              ]}
-              className="w-full sm:w-auto"
-            />
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-            <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Semester:</label>
-            <CustomSelect
-              value={selectedSemester}
-              onChange={(e) => setSelectedSemester(e.target.value)}
-              disabled={!selectedYear}
-              placeholder={selectedYear ? 'Select Semester' : 'Select Year first'}
-              options={[
-                { value: 'all', label: 'All Semesters' },
-                { value: '1', label: '1st Semester' },
-                { value: '2', label: '2nd Semester' }
-              ]}
-              className="w-full sm:w-auto"
-            />
-          </div>
-          {regPrefix && (
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 rounded-lg w-full sm:w-auto">
-              <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Registration Prefix:</span>
-              <span className="text-xs sm:text-sm font-mono text-slate-900 dark:text-white font-semibold">{regPrefix}</span>
-            </div>
-          )}
-          {(selectedBatchYear || selectedFaculty || selectedDepartment || selectedYear !== 'all' || selectedSemester !== 'all') && (
-            <button
-              onClick={() => {
-                setSelectedBatchYear('');
-                setSelectedFaculty('');
-                setSelectedDepartment('');
-                setSelectedYear('all');
-                setSelectedSemester('all');
+                const batch = batches.find(b => b._id === e.target.value);
+                setSelectedBatch(batch || null);
                 setSearchTerm('');
-                setStudents([]);
               }}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded-lg transition-all font-medium text-xs sm:text-sm border border-red-300 dark:border-red-800"
-              title="Clear all filters"
-            >
-              <X className="w-4 h-4" />
-              <span>Clear All</span>
-            </button>
+              disabled={loadingBatches}
+              loading={loadingBatches}
+              placeholder={loadingBatches ? 'Loading batches...' : 'Select a batch'}
+              options={[
+                { value: '', label: loadingBatches ? 'Loading batches...' : (batches.length === 0 ? 'No batches available' : 'Select a batch') },
+                ...(Array.isArray(batches) ? batches.map((b) => ({
+                  value: b._id,
+                  label: `${b.startYear} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`
+                })) : [])
+              ]}
+            />
+          </div>
+          {selectedBatch && regPrefix && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registration Prefix:</label>
+              <div className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                <span className="text-sm font-mono text-slate-900 dark:text-white font-semibold">{regPrefix}</span>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -942,10 +707,10 @@ export const StudentsPage = ({ onViewStudent }) => {
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder={selectedBatchYear && selectedFaculty && selectedDepartment && selectedYear && selectedSemester ? "Search by name, email, or registration number..." : "Please select all filters first"}
+              placeholder={selectedBatch ? "Search by name, email, or registration number..." : "Please select a batch first"}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              disabled={!selectedBatchYear || !selectedFaculty || !selectedDepartment || !selectedYear || !selectedSemester}
+              disabled={!selectedBatch}
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-slate-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
@@ -955,6 +720,17 @@ export const StudentsPage = ({ onViewStudent }) => {
           <table className="w-full">
             <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
               <tr>
+                <th className="px-4 py-3 text-left">
+                  {selectedBatch && students.length > 0 && (
+                    <input
+                      type="checkbox"
+                      checked={selectedStudents.length === students.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 text-cyan-600 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-cyan-500 cursor-pointer"
+                      title="Select All"
+                    />
+                  )}
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   Registration No
                 </th>
@@ -978,28 +754,37 @@ export const StudentsPage = ({ onViewStudent }) => {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center">
+                  <td colSpan="7" className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center gap-3">
                       <LoadingSpinner size="lg" className="text-cyan-600" />
                       <span className="text-slate-500 dark:text-slate-400">Loading students...</span>
                     </div>
                   </td>
                 </tr>
-              ) : !selectedBatchYear || !selectedFaculty || !selectedDepartment || !selectedYear || !selectedSemester ? (
+              ) : !selectedBatch ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
-                    Please select all filters to view students
+                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                    Please select a batch to view students
                   </td>
                 </tr>
               ) : students.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
                     No students found for the selected criteria
                   </td>
                 </tr>
               ) : (
                 students.map((student) => (
                   <tr key={student._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <td className="px-4 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedStudents.includes(student._id)}
+                        onChange={() => toggleSelectStudent(student._id)}
+                        className="w-4 h-4 text-cyan-600 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-cyan-500 cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900 dark:text-white">
                       {student.registrationNo}
                     </td>
@@ -1306,67 +1091,60 @@ export const StudentsPage = ({ onViewStudent }) => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Department *
-                </label>
-                {editingStudent ? (
-                  <CustomSelect
-                    value={formData.department}
-                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    placeholder="Select Department"
-                    options={Object.values(facultyStructure).flatMap(faculty => 
-                      faculty.departments.map(dept => ({
-                        value: dept.name,
-                        label: dept.name
-                      }))
-                    )}
-                    className="w-full"
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={selectedDepartment || ''}
-                    disabled
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 cursor-not-allowed"
-                  />
-                )}
-              </div>
+              {editingStudent ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Department *
+                    </label>
+                    <CustomSelect
+                      value={formData.department}
+                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                      placeholder="Select Department"
+                      options={Object.values(facultyStructure).flatMap(faculty => 
+                        faculty.departments.map(dept => ({
+                          value: dept.name,
+                          label: dept.name
+                        }))
+                      )}
+                      className="w-full"
+                    />
+                  </div>
 
-              {editingStudent && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Year *
-                    </label>
-                    <CustomSelect
-                      value={formData.year}
-                      onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
-                      placeholder="Select Year"
-                      options={[1, 2, 3, 4].map(y => ({
-                        value: y,
-                        label: `Year ${y}`
-                      }))}
-                      className="w-full"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Year *
+                      </label>
+                      <CustomSelect
+                        value={formData.year}
+                        onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
+                        placeholder="Select Year"
+                        options={[1, 2, 3, 4].map(y => ({
+                          value: y,
+                          label: `Year ${y}`
+                        }))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Semester *
+                      </label>
+                      <CustomSelect
+                        value={formData.semester}
+                        onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) })}
+                        placeholder="Select Semester"
+                        options={[1, 2].map(s => ({
+                          value: s,
+                          label: s === 1 ? '1st Semester' : '2nd Semester'
+                        }))}
+                        className="w-full"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Semester *
-                    </label>
-                    <CustomSelect
-                      value={formData.semester}
-                      onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) })}
-                      placeholder="Select Semester"
-                      options={[1, 2].map(s => ({
-                        value: s,
-                        label: s === 1 ? '1st Semester' : '2nd Semester'
-                      }))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              )}
+                </>
+              ) : null}
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">

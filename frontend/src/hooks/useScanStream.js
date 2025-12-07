@@ -44,7 +44,8 @@ export const useScanStream = () => {
               console.log('Processing scan.ingested/duplicate - creating lastScan object');
               const scanData = { 
                 ...data.payload, 
-                type: data.type 
+                type: data.type,
+                timestamp: Date.now() // Add timestamp to force new object reference
               };
               console.log('Setting lastScan with:', scanData);
               setLastScan(scanData);
@@ -54,15 +55,26 @@ export const useScanStream = () => {
               console.log('Processing scan.error - creating lastScan object');
               const scanData = { 
                 ...data.payload, 
-                type: data.type 
+                type: data.type,
+                timestamp: Date.now() // Add timestamp to force new object reference
               };
               console.log('Setting lastScan with:', scanData);
               setLastScan(scanData);
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'attendance.updated') {
+              console.log('Processing attendance.updated - triggering refresh');
+              // Also trigger a scan update for attendance changes
+              setLastScan({
+                type: 'attendance.updated',
+                timestamp: Date.now()
+              });
               setEvents((prev) => [data, ...prev].slice(0, 50));
             } else if (data.type === 'session.status') {
-              setSessionStatus(data.payload);
+              console.log('Processing session.status change');
+              setSessionStatus({
+                ...data.payload,
+                timestamp: Date.now()
+              });
             } else if (data.type === 'connected') {
               // Handle connection confirmation message
               console.log('WebSocket connection confirmed:', data.payload?.message);

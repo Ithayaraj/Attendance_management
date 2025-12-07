@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "drop-batch-index": "node src/scripts/dropBatchIndex.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

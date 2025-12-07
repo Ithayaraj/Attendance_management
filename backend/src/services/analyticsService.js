@@ -122,13 +122,19 @@ export const getSessionSummaryByYear = async () => {
     bucket[r.status]++;
   }
 
-  // Add virtual absents for enrolled students who have no record
-  const enrollments = await Enrollment.find({ courseId: session.courseId._id }).populate('studentId');
+  // Add virtual absents for students in the same batch who have no record
+  // Get all students matching the session's department, year, and semester
+  const allStudents = await Student.find({
+    department: session.courseId?.department,
+    year: session.year,
+    semester: session.semester
+  });
+  
   const presentIds = new Set(records.map(r => String(r.studentId?._id)));
-  for (const e of enrollments) {
-    const sid = String(e.studentId?._id);
+  for (const student of allStudents) {
+    const sid = String(student._id);
     if (!presentIds.has(sid)) {
-      const y = e.studentId?.year || 0;
+      const y = student.year || 0;
       const bucket = ensureYear(y);
       bucket.absent++;
       totals.absent++;
@@ -235,9 +241,13 @@ export const getCurrentSessions = async () => {
       // Get attendance records for this session
       const records = await AttendanceRecord.find({ sessionId: session._id });
       
-      // Get total enrolled students for this course
-      const enrollments = await Enrollment.find({ courseId: session.courseId._id });
-      const totalStudents = enrollments.length;
+      // Get total students based on session's year, semester, and department
+      // This matches students in the same batch as the session
+      const totalStudents = await Student.countDocuments({
+        department: session.courseId?.department,
+        year: session.year,
+        semester: session.semester
+      });
       
       // Calculate stats
       const stats = { present: 0, late: 0, absent: 0 };

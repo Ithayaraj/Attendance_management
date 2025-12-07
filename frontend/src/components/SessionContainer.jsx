@@ -18,22 +18,22 @@ export const SessionContainer = ({ session, onClick }) => {
   return (
     <div
       onClick={() => onClick(session)}
-      className="bg-slate-800/40 dark:bg-slate-900/60 backdrop-blur-sm rounded-xl shadow-lg border border-slate-700/50 dark:border-slate-600/50 hover:border-cyan-500 dark:hover:border-cyan-400 hover:shadow-2xl p-4 cursor-pointer transition-all duration-300"
+      className="bg-slate-800/40 dark:bg-slate-900/60 backdrop-blur-sm rounded-xl shadow-lg border border-slate-700/50 dark:border-slate-600/50 hover:border-cyan-500 dark:hover:border-cyan-400 hover:shadow-2xl p-3 sm:p-4 cursor-pointer transition-all duration-300"
     >
       {/* Faculty Header */}
-      <div className="bg-gradient-to-r from-blue-600 via-cyan-500 to-cyan-400 rounded-lg px-4 py-2 mb-3 shadow-md">
+      <div className="bg-gradient-to-r from-blue-600 via-cyan-500 to-cyan-400 rounded-lg px-3 sm:px-4 py-1.5 sm:py-2 mb-2 sm:mb-3 shadow-md">
         <p className="text-xs font-bold text-white text-center tracking-wide">
           {session.department || 'Department of Information and Communication Technology'}
         </p>
       </div>
 
-      <div className="flex gap-4">
-        {/* Left Side - Year & Semester Badge */}
-        <div className="flex flex-col items-center gap-2 flex-shrink-0">
-          <div className="w-20 h-20 bg-gradient-to-br from-purple-600 via-blue-600 to-cyan-500 rounded-xl shadow-lg flex items-center justify-center">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+        {/* Top Row on Mobile - Year & Semester Badge + Live Badge */}
+        <div className="flex sm:flex-col items-center justify-between sm:justify-start gap-2 flex-shrink-0">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-purple-600 via-blue-600 to-cyan-500 rounded-xl shadow-lg flex items-center justify-center">
             <div className="text-center">
-              <div className="text-2xl font-extrabold text-white">Y{session.year}</div>
-              <div className="text-xs text-cyan-100 font-semibold">Semester {session.semester}</div>
+              <div className="text-xl sm:text-2xl font-extrabold text-white">Y{session.year}</div>
+              <div className="text-xs text-cyan-100 font-semibold">Sem {session.semester}</div>
             </div>
           </div>
 
@@ -52,18 +52,18 @@ export const SessionContainer = ({ session, onClick }) => {
           <div className="mb-2">
             <div className="flex items-center gap-2 mb-1">
               <BookOpen className="w-4 h-4 text-cyan-400" />
-              <h4 className="text-lg font-bold text-white truncate">{session.courseCode}</h4>
+              <h4 className="text-base sm:text-lg font-bold text-white truncate">{session.courseCode}</h4>
             </div>
             <p className="text-xs text-slate-300 truncate pl-6">{session.courseName}</p>
           </div>
 
           {/* Time & Room */}
-          <div className="flex items-center gap-2 mb-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-700/50 rounded-md border border-slate-600">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 bg-slate-700/50 rounded-md border border-slate-600">
               <Clock className="w-3 h-3 text-cyan-400" />
               <span className="text-xs font-semibold text-slate-200">{session.startTime} - {session.endTime}</span>
             </div>
-            <div className="px-2.5 py-1 bg-slate-700/50 rounded-md border border-slate-600">
+            <div className="px-2 sm:px-2.5 py-1 bg-slate-700/50 rounded-md border border-slate-600">
               <span className="text-xs font-bold text-cyan-400">{session.room}</span>
             </div>
           </div>
@@ -91,8 +91,8 @@ export const SessionContainer = ({ session, onClick }) => {
           </div>
         </div>
 
-        {/* Right Side - Pie Chart */}
-        <div className="flex-shrink-0 w-36 flex flex-col">
+        {/* Right Side - Pie Chart (Hidden on mobile, shown on sm+) */}
+        <div className="hidden sm:flex flex-shrink-0 w-36 flex-col">
           <p className="text-xs font-bold text-slate-300 text-center mb-1">Attendance Status</p>
           <div className="h-28 mb-2">
             <ResponsiveContainer width="100%" height="100%">
@@ -123,6 +123,18 @@ export const SessionContainer = ({ session, onClick }) => {
               <div className="text-xs text-slate-400">Not Attending</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Mobile-only Attendance Percentages */}
+      <div className="sm:hidden mt-3 grid grid-cols-2 gap-2">
+        <div className="bg-blue-600/20 rounded p-2 text-center border border-blue-500/30">
+          <div className="text-xl font-bold text-blue-400">{attendingPercentage}%</div>
+          <div className="text-xs text-slate-400">Attending</div>
+        </div>
+        <div className="bg-red-600/20 rounded p-2 text-center border border-red-500/30">
+          <div className="text-xl font-bold text-red-400">{notAttendingPercentage}%</div>
+          <div className="text-xs text-slate-400">Not Attending</div>
         </div>
       </div>
     </div>

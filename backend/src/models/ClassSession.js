@@ -23,6 +23,11 @@ const classSessionSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  department: {
+    type: String,
+    required: true,
+    trim: true
+  },
   year: {
     type: Number,
     required: true,
@@ -46,6 +51,6 @@ const classSessionSchema = new mongoose.Schema({
 
 classSessionSchema.index({ courseId: 1, date: 1 });
 classSessionSchema.index({ status: 1, date: 1 });
-classSessionSchema.index({ year: 1, semester: 1, status: 1 });
+classSessionSchema.index({ department: 1, year: 1, semester: 1, status: 1 });
 
 export const ClassSession = mongoose.model('ClassSession', classSessionSchema);

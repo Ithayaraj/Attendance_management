@@ -293,14 +293,20 @@ export const getSessionAttendance = async (sessionId) => {
     .sort({ checkInAt: 1 });
 
   // Mark not-yet-checked-in students as absent (virtual list)
-  const enrollments = await Enrollment.find({ courseId: session.courseId._id }).populate('studentId');
+  // Get all students matching the session's department, year, and semester
+  const allStudents = await Student.find({
+    department: session.courseId?.department,
+    year: session.year,
+    semester: session.semester
+  });
+  
   const presentIds = new Set(records.map(r => String(r.studentId._id)));
-  const virtualAbsents = enrollments
-    .filter(e => !presentIds.has(String(e.studentId._id)))
-    .map(e => ({
-      _id: `virtual-${e.studentId._id}`,
+  const virtualAbsents = allStudents
+    .filter(student => !presentIds.has(String(student._id)))
+    .map(student => ({
+      _id: `virtual-${student._id}`,
       sessionId,
-      studentId: e.studentId,
+      studentId: student,
       status: 'absent',
       checkInAt: null
     }));

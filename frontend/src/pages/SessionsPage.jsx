@@ -10,10 +10,9 @@ const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 export const SessionsPage = () => {
   const { showSuccess, showError, showWarning } = useNotification();
   const [courses, setCourses] = useState([]);
-  const [selectedFaculty, setSelectedFaculty] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('');
-  const [selectedYear, setSelectedYear] = useState('');
-  const [selectedSemester, setSelectedSemester] = useState('');
+  const [batches, setBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState(null);
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -23,6 +22,9 @@ export const SessionsPage = () => {
   const [editing, setEditing] = useState(null);
   const coursesLoadedRef = useRef(false);
   const isRestoringRef = useRef(false);
+
+  const BATCHES_CACHE_KEY = 'sessions_batches_cache';
+  const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   // Extract year and semester from course code
   const getYearSemesterFromCode = (code) => {
@@ -58,26 +60,31 @@ export const SessionsPage = () => {
     }
   };
 
-  const availableDepartments = useMemo(() => {
-    if (!selectedFaculty || !facultyStructure[selectedFaculty]) return [];
-    return facultyStructure[selectedFaculty].departments;
-  }, [selectedFaculty]);
-
-  // Filter courses by selected department, year, and semester
+  // Filter courses by selected batch (department, year, semester)
   const filteredCourses = useMemo(() => {
-    if (!selectedDepartment || !selectedYear) return [];
-    let filtered = courses.filter(c => c.department === selectedDepartment);
+    if (!selectedBatch) return [];
     
-    // Filter by year (required)
-    filtered = filtered.filter(c => c.year === Number(selectedYear));
+    let filtered = courses.filter(c => c.department === selectedBatch.department);
     
-    // Filter by semester if selected (optional - empty means all semesters)
-    if (selectedSemester) {
-      filtered = filtered.filter(c => c.semester === Number(selectedSemester));
-    }
+    // Filter by year and semester from course code
+    filtered = filtered.filter(c => {
+      const yearInfo = getYearSemesterFromCode(c.code);
+      return yearInfo?.year === selectedBatch.currentYear && 
+             yearInfo?.semester === selectedBatch.currentSemester;
+    });
     
     return filtered;
-  }, [courses, selectedDepartment, selectedYear, selectedSemester]);
+  }, [courses, selectedBatch]);
+
+  // Check if there are any active (live or scheduled) sessions for the selected batch
+  const activeSessions = useMemo(() => {
+    if (!selectedBatch) return [];
+    return sessions.filter(s => 
+      s.status === 'live' || s.status === 'scheduled'
+    );
+  }, [sessions, selectedBatch]);
+
+  const hasActiveSessions = activeSessions.length > 0;
   const roundToQuarter = (date) => {
     const d = new Date(date);
     const minutes = d.getMinutes();
@@ -279,6 +286,57 @@ export const SessionsPage = () => {
     }
   }, [selectedCourseId, loadSessions]);
 
+  // Load batches
+  useEffect(() => {
+    const load = async () => {
+      // Check cache first
+      const cached = sessionStorage.getItem(BATCHES_CACHE_KEY);
+      if (cached) {
+        try {
+          const { data, timestamp } = JSON.parse(cached);
+          const age = Date.now() - timestamp;
+          
+          if (age < BATCHES_CACHE_DURATION) {
+            setBatches(data || []);
+            setLoadingBatches(false);
+            
+            // Refresh in background if data is older than 1 minute
+            if (age > 60 * 1000) {
+              loadFresh();
+            }
+            return;
+          }
+        } catch (e) {
+          console.error('Cache parse error:', e);
+        }
+      }
+
+      await loadFresh();
+    };
+
+    const loadFresh = async () => {
+      try {
+        setLoadingBatches(true);
+        const response = await apiClient.get('/api/batches');
+        const batchesData = Array.isArray(response) ? response : (response?.data || []);
+        setBatches(batchesData);
+        
+        // Cache the data
+        sessionStorage.setItem(BATCHES_CACHE_KEY, JSON.stringify({
+          data: batchesData,
+          timestamp: Date.now()
+        }));
+      } catch (error) {
+        console.error('Error loading batches:', error);
+        setBatches([]);
+      } finally {
+        setLoadingBatches(false);
+      }
+    };
+
+    load();
+  }, []);
+
   // Restore filter selections from sessionStorage on mount
   useEffect(() => {
     const savedFilters = sessionStorage.getItem('sessions_filters');
@@ -286,10 +344,11 @@ export const SessionsPage = () => {
       try {
         isRestoringRef.current = true;
         const filters = JSON.parse(savedFilters);
-        if (filters.faculty) setSelectedFaculty(filters.faculty);
-        if (filters.department) setSelectedDepartment(filters.department);
-        if (filters.year) setSelectedYear(filters.year);
-        if (filters.semester) setSelectedSemester(filters.semester);
+        if (filters.batchId) {
+          // Find and set the batch
+          const batch = batches.find(b => b._id === filters.batchId);
+          if (batch) setSelectedBatch(batch);
+        }
         if (filters.courseId) setSelectedCourseId(filters.courseId);
         // Reset the flag after a short delay to allow state updates
         setTimeout(() => {
@@ -300,19 +359,16 @@ export const SessionsPage = () => {
         isRestoringRef.current = false;
       }
     }
-  }, []);
+  }, [batches]);
 
   // Save filter selections to sessionStorage whenever they change
   useEffect(() => {
     const filters = {
-      faculty: selectedFaculty,
-      department: selectedDepartment,
-      year: selectedYear,
-      semester: selectedSemester,
+      batchId: selectedBatch?._id || '',
       courseId: selectedCourseId
     };
     sessionStorage.setItem('sessions_filters', JSON.stringify(filters));
-  }, [selectedFaculty, selectedDepartment, selectedYear, selectedSemester, selectedCourseId]);
+  }, [selectedBatch, selectedCourseId]);
 
   useEffect(() => {
     // Check cache for courses
@@ -344,15 +400,15 @@ export const SessionsPage = () => {
     }
   }, []);
 
-  // Reset course when department, year, or semester changes (but not during restoration)
+  // Reset course when batch changes (but not during restoration)
   useEffect(() => {
     if (isRestoringRef.current) return; // Don't reset during restoration
     setSelectedCourseId('');
     setSessions([]);
-  }, [selectedDepartment, selectedYear, selectedSemester]);
+  }, [selectedBatch]);
 
   useEffect(() => {
-    if (selectedYear && selectedDepartment) {
+    if (selectedBatch) {
       // If no specific course selected, load sessions for all filtered courses
       if (!selectedCourseId && filteredCourses.length > 0) {
         loadAllCourseSessions();
@@ -400,7 +456,7 @@ export const SessionsPage = () => {
         });
       }
     }
-  }, [selectedCourseId, selectedYear, selectedDepartment, filteredCourses, loadSessions, loadAllCourseSessions, checkAndUpdateSessionStatuses]);
+  }, [selectedCourseId, selectedBatch, filteredCourses, loadSessions, loadAllCourseSessions, checkAndUpdateSessionStatuses]);
 
   // Periodically check and update session statuses (every minute)
   useEffect(() => {
@@ -496,127 +552,74 @@ export const SessionsPage = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col gap-4">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:gap-4">
         <div>
           <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Sessions</h3>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Manage class sessions and go live</p>
         </div>
         
-        {/* Filter Section */}
+        {/* Batch and Course Filter Section */}
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-            {/* Faculty Selection */}
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Faculty</label>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-end">
+            {/* Batch Selection */}
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Batch:</label>
               <CustomSelect
-                value={selectedFaculty}
+                value={selectedBatch?._id || ''}
                 onChange={(e) => {
-                  setSelectedFaculty(e.target.value);
-                  setSelectedDepartment('');
-                  setSelectedYear('');
+                  const batch = batches.find(b => b._id === e.target.value);
+                  setSelectedBatch(batch || null);
                   setSelectedCourseId('');
                 }}
-                placeholder="Select Faculty"
+                disabled={loadingBatches}
+                loading={loadingBatches}
+                placeholder={loadingBatches ? 'Loading batches...' : 'Select a batch'}
                 options={[
-                  { value: '', label: 'Select Faculty' },
-                  { value: 'Faculty of Applied Science', label: 'Faculty of Applied Science' },
-                  { value: 'Faculty of Business Studies', label: 'Faculty of Business Studies' },
-                  { value: 'Faculty of Technological Studies', label: 'Faculty of Technological Studies' }
+                  { value: '', label: loadingBatches ? 'Loading batches...' : (batches.length === 0 ? 'No batches available' : 'Select a batch') },
+                  ...(Array.isArray(batches) ? batches.map((b) => ({
+                    value: b._id,
+                    label: `${b.startYear} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`
+                  })) : [])
                 ]}
-                className="w-full min-w-0"
-              />
-            </div>
-
-            {/* Department Selection */}
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Department</label>
-              <CustomSelect
-                value={selectedDepartment}
-                onChange={(e) => {
-                  setSelectedDepartment(e.target.value);
-                  setSelectedCourseId('');
-                }}
-                disabled={!selectedFaculty}
-                placeholder={selectedFaculty ? 'Select Department' : 'Select Faculty first'}
-                options={[
-                  { value: '', label: selectedFaculty ? 'Select Department' : 'Select Faculty first' },
-                  ...availableDepartments.map((dept) => ({
-                    value: dept.name,
-                    label: dept.name
-                  }))
-                ]}
-                className="w-full min-w-0"
-              />
-            </div>
-
-            {/* Year Selection */}
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Year</label>
-              <CustomSelect
-                value={selectedYear}
-                onChange={(e) => {
-                  setSelectedYear(e.target.value);
-                  setSelectedCourseId('');
-                }}
-                disabled={!selectedDepartment}
-                placeholder={selectedDepartment ? 'Select Year' : 'Select Department first'}
-                options={[
-                  { value: '', label: selectedDepartment ? 'Select Year' : 'Select Department first' },
-                  ...([1, 2, 3, 4].map(y => ({
-                    value: String(y),
-                    label: `Year ${y}`
-                  })))
-                ]}
-                className="w-full min-w-0"
-              />
-            </div>
-
-            {/* Semester Selection */}
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Semester</label>
-              <CustomSelect
-                value={selectedSemester}
-                onChange={(e) => {
-                  setSelectedSemester(e.target.value);
-                  setSelectedCourseId('');
-                }}
-                disabled={!selectedYear}
-                placeholder={selectedYear ? 'All Semesters' : 'Select Year first'}
-                options={[
-                  { value: '', label: selectedYear ? 'All Semesters' : 'Select Year first' },
-                  { value: '1', label: 'Semester 1' },
-                  { value: '2', label: 'Semester 2' }
-                ]}
-                className="w-full min-w-0"
               />
             </div>
 
             {/* Course Selection */}
-            <div className="flex flex-col gap-1.5 min-w-0">
-              <label className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">Course</label>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Course (Optional):</label>
               <CustomSelect
                 value={selectedCourseId}
                 onChange={(e) => setSelectedCourseId(e.target.value)}
-                disabled={!selectedYear}
-                placeholder={selectedYear ? 'All Courses' : 'Select Year first'}
+                disabled={!selectedBatch}
+                placeholder={selectedBatch ? 'All Courses' : 'Select batch first'}
                 options={[
-                  { value: '', label: selectedYear ? 'All Courses' : 'Select Year first' },
+                  { value: '', label: selectedBatch ? 'All Courses' : 'Select batch first' },
                   ...filteredCourses.map(c => ({
                     value: c._id,
                     label: `${c.code} - ${c.name}`
                   }))
                 ]}
-                className="w-full min-w-0"
               />
             </div>
           </div>
+
+          {selectedBatch && (
+            <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                <span className="font-medium">Selected:</span> {selectedBatch.department} - Year {selectedBatch.currentYear}, Semester {selectedBatch.currentSemester}
+                {filteredCourses.length > 0 && (
+                  <span className="ml-2">• {filteredCourses.length} course{filteredCourses.length !== 1 ? 's' : ''} available</span>
+                )}
+              </p>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
             <button 
               onClick={() => selectedCourseId ? loadSessions(selectedCourseId) : loadAllCourseSessions()} 
-              disabled={!selectedYear || !selectedDepartment} 
+              disabled={!selectedBatch} 
               className="w-full sm:w-auto px-3 sm:px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
               <RefreshCw className="w-4 h-4" /> 
@@ -634,9 +637,38 @@ export const SessionsPage = () => {
         </div>
       </div>
 
+      {/* Warning for active sessions */}
+      {selectedBatch && hasActiveSessions && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 sm:p-4 mb-3 sm:mb-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">ℹ️</span>
+            <div className="flex-1">
+              <h4 className="font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                Active Session{activeSessions.length > 1 ? 's' : ''} for This Batch
+              </h4>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mb-2">
+                This batch has {activeSessions.length} active session{activeSessions.length > 1 ? 's' : ''}. You must close {activeSessions.length > 1 ? 'all active sessions' : 'the active session'} before creating a new one.
+              </p>
+              <div className="space-y-1">
+                {activeSessions.map(s => (
+                  <div key={s._id} className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.status === 'live' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                      {s.status}
+                    </span>
+                    <span className="font-medium">{s.courseId?.code || 'N/A'}</span>
+                    <span>•</span>
+                    <span>{s.date} {s.startTime}-{s.endTime}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Warning for sessions without year/semester */}
-      {selectedCourseId && sessions.length > 0 && sessions.some(s => !s.year || !s.semester) && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 mb-4">
+      {selectedBatch && sessions.length > 0 && sessions.some(s => !s.year || !s.semester) && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 sm:p-4 mb-3 sm:mb-4">
           <div className="flex items-start gap-3">
             <span className="text-2xl">⚠️</span>
             <div className="flex-1">
@@ -655,17 +687,9 @@ export const SessionsPage = () => {
       )}
 
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-        {!selectedYear || !selectedDepartment ? (
+        {!selectedBatch ? (
           <div className="p-12 text-center text-slate-500 dark:text-slate-400">
-            {!selectedFaculty ? (
-              <p>Please select Faculty, Department, and Year to view sessions</p>
-            ) : !selectedDepartment ? (
-              <p>Please select Department and Year to view sessions</p>
-            ) : !selectedYear ? (
-              <p>Please select Year to view sessions</p>
-            ) : (
-              <p>Please select filters to view sessions</p>
-            )}
+            <p>Please select a batch to view sessions</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -742,20 +766,20 @@ export const SessionsPage = () => {
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">New Session</h3>
               <button onClick={()=>setShowCreate(false)} className="text-slate-500 hover:text-slate-700">✕</button>
             </div>
-            <form onSubmit={createSession} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={createSession} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
-                  <input type="date" required value={form.date} onChange={(e)=>setForm({...form, date:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                  <input type="date" required value={form.date} onChange={(e)=>setForm({...form, date:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Room</label>
-                  <input type="text" required value={form.room} onChange={(e)=>setForm({...form, room:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Room</label>
+                  <input type="text" required value={form.room} onChange={(e)=>setForm({...form, room:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
                   <input 
                     type="time" 
                     required 
@@ -766,21 +790,21 @@ export const SessionsPage = () => {
                       const end = value ? addMinutesLocal(value, 60) : '';
                       setForm({...form, startTime: value, endTime: end});
                     }}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" 
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" 
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
-                  <input type="time" required value={form.endTime} onChange={(e)=>setForm({...form, endTime:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
+                  <input type="time" required value={form.endTime} onChange={(e)=>setForm({...form, endTime:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={form.goLive} onChange={(e)=>setForm({...form, goLive:e.target.checked})} />
-                <span className="text-sm text-slate-700 dark:text-slate-300">Set status to Live after create</span>
+                <span className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Set status to Live after create</span>
               </label>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={()=>setShowCreate(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Cancel</button>
-                <button type="submit" disabled={creating} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all">{creating ? 'Creating...' : 'Create'}</button>
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+                <button type="button" onClick={()=>setShowCreate(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm order-2 sm:order-1">Cancel</button>
+                <button type="submit" disabled={creating} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all text-sm order-1 sm:order-2">{creating ? 'Creating...' : 'Create'}</button>
               </div>
             </form>
           </div>
@@ -794,36 +818,36 @@ export const SessionsPage = () => {
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Session</h3>
               <button onClick={()=>setShowEdit(false)} className="text-slate-500 hover:text-slate-700">✕</button>
             </div>
-            <form onSubmit={saveEdit} className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={saveEdit} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
-                  <input type="date" required value={form.date} onChange={(e)=>setForm({...form, date:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                  <input type="date" required value={form.date} onChange={(e)=>setForm({...form, date:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Room</label>
-                  <input type="text" required value={form.room} onChange={(e)=>setForm({...form, room:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Room</label>
+                  <input type="text" required value={form.room} onChange={(e)=>setForm({...form, room:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
                   <input 
                     type="time" 
                     required 
                     value={form.startTime} 
                     onChange={(e) => setForm({...form, startTime: e.target.value})} 
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" 
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" 
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
-                  <input type="time" required value={form.endTime} onChange={(e)=>setForm({...form, endTime:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white" />
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
+                  <input type="time" required value={form.endTime} onChange={(e)=>setForm({...form, endTime:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={()=>setShowEdit(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Cancel</button>
-                <button type="submit" disabled={creating} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all">Save</button>
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
+                <button type="button" onClick={()=>setShowEdit(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm order-2 sm:order-1">Cancel</button>
+                <button type="submit" disabled={creating} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all text-sm order-1 sm:order-2">Save</button>
               </div>
             </form>
           </div>
