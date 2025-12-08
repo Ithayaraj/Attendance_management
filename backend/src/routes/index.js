@@ -43,6 +43,7 @@ router.get('/courses/:courseId/enrollments', requireAuth, enrollmentsController.
 router.post('/courses/:courseId/enrollments', requireAuth, requireRole(['admin', 'instructor']), enrollmentsController.createEnrollment);
 router.delete('/courses/:courseId/enrollments/:studentId', requireAuth, requireRole(['admin', 'instructor']), enrollmentsController.deleteEnrollment);
 
+router.get('/sessions', requireAuth, sessionsController.querySessions);
 router.get('/courses/:courseId/sessions', requireAuth, sessionsController.getCourseSessions);
 router.post('/courses/:courseId/sessions', requireAuth, requireRole(['admin', 'instructor']), sessionsController.createSession);
 router.get('/sessions/:sessionId', requireAuth, sessionsController.getSession);
@@ -80,6 +81,11 @@ router.get('/analytics/live', requireAuth, analyticsController.getLiveSessionSta
 router.get('/analytics/session/year-wise', requireAuth, analyticsController.getSessionSummaryYearWise);
 router.get('/analytics/current-sessions', requireAuth, analyticsController.getCurrentSessionsStats);
 router.get('/analytics/batch/line', requireAuth, analyticsController.getBatchLineStats);
+router.get('/analytics/batch-wise', requireAuth, analyticsController.getBatchWiseStats);
+router.get('/analytics/batch/:batchId/courses', requireAuth, analyticsController.getBatchCoursesStats);
+router.get('/analytics/batch/:batchId/course/:courseId', requireAuth, analyticsController.getBatchCourseAttendanceStats);
+router.get('/analytics/batch/:batchId/students', requireAuth, analyticsController.getBatchStudentsStats);
+router.get('/analytics/batch/:batchId/student/:studentId', requireAuth, analyticsController.getStudentCourseAttendanceStats);
 router.get('/analytics/students/:id', requireAuth, studentAnalyticsController.getStudentAnalytics);
 router.get('/analytics/students/:id/semester', requireAuth, studentAnalyticsController.getStudentSemesterAnalytics);
 router.get('/analytics/top-attendees', requireAuth, studentAnalyticsController.getTopAttendees);

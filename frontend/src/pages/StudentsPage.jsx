@@ -24,6 +24,8 @@ export const StudentsPage = ({ onViewStudent }) => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingStudent, setViewingStudent] = useState(null);
   const [selectedStudents, setSelectedStudents] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   const [formData, setFormData] = useState({
     registrationNo: '',
@@ -62,6 +64,15 @@ export const StudentsPage = ({ onViewStudent }) => {
         { name: 'Department of Information and Communication Technology', code: 'ICTS' }
       ]
     }
+  };
+
+  // Helper function to get faculty name from department
+  const getFacultyFromDepartment = (departmentName) => {
+    for (const [facultyName, facultyData] of Object.entries(facultyStructure)) {
+      const found = facultyData.departments.find(d => d.name === departmentName);
+      if (found) return facultyName;
+    }
+    return null;
   };
 
   // Get department code from selected batch
@@ -135,6 +146,19 @@ export const StudentsPage = ({ onViewStudent }) => {
   }, []);
 
   const STUDENTS_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+  // Pagination logic
+  const totalPages = Math.ceil(students.length / ITEMS_PER_PAGE);
+  const paginatedStudents = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return students.slice(startIndex, endIndex);
+  }, [students, currentPage]);
+
+  // Reset to page 1 when students change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [students]);
 
   // Fetch students from database when batch is selected
   useEffect(() => {
@@ -615,30 +639,15 @@ export const StudentsPage = ({ onViewStudent }) => {
               )}
             </div>
           )}
-          {selectedBatch && students.length > 0 && (
-            <>
-              <button
-                onClick={() => {
-                  setBulkEditData({ year: '', semester: '' });
-                  setShowBulkEditModal(true);
-                }}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
-              >
-                <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Bulk Edit</span>
-                <span className="sm:hidden">Edit All</span>
-              </button>
-              {selectedStudents.length > 0 && (
-                <button
-                  onClick={handleBulkDelete}
-                  className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
-                >
-                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span className="hidden sm:inline">Delete Selected ({selectedStudents.length})</span>
-                  <span className="sm:hidden">Delete ({selectedStudents.length})</span>
-                </button>
-              )}
-            </>
+          {selectedBatch && students.length > 0 && selectedStudents.length > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
+            >
+              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Delete Selected ({selectedStudents.length})</span>
+              <span className="sm:hidden">Delete ({selectedStudents.length})</span>
+            </button>
           )}
           <button
             onClick={() => {
@@ -683,10 +692,14 @@ export const StudentsPage = ({ onViewStudent }) => {
               placeholder={loadingBatches ? 'Loading batches...' : 'Select a batch'}
               options={[
                 { value: '', label: loadingBatches ? 'Loading batches...' : (batches.length === 0 ? 'No batches available' : 'Select a batch') },
-                ...(Array.isArray(batches) ? batches.map((b) => ({
-                  value: b._id,
-                  label: `${b.startYear} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`
-                })) : [])
+                ...(Array.isArray(batches) ? batches.map((b) => {
+                  const faculty = getFacultyFromDepartment(b.department);
+                  const facultyShort = faculty ? faculty.replace('Faculty of ', '') : '';
+                  return {
+                    value: b._id,
+                    label: `${b.startYear} - ${facultyShort} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`
+                  };
+                }) : [])
               ]}
             />
           </div>
@@ -774,7 +787,7 @@ export const StudentsPage = ({ onViewStudent }) => {
                   </td>
                 </tr>
               ) : (
-                students.map((student) => (
+                paginatedStudents.map((student) => (
                   <tr key={student._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                     <td className="px-4 py-4 whitespace-nowrap">
                       <input
@@ -839,6 +852,46 @@ export const StudentsPage = ({ onViewStudent }) => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {selectedBatch && students.length > 0 && (
+          <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-sm text-slate-600 dark:text-slate-400">
+              Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, students.length)} of {students.length} students
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300"
+              >
+                Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-3 py-1.5 text-sm rounded-lg ${
+                      currentPage === page
+                        ? 'bg-cyan-600 text-white'
+                        : 'border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {showImportModal && (

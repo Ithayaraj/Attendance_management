@@ -58,8 +58,18 @@ export const CustomSelect = ({
           ${isOpen ? 'ring-2 ring-cyan-500' : ''}
         `}
       >
-        <span className="text-xs sm:text-sm truncate min-w-0 flex-1 text-left">
-          {loading ? 'Loading...' : selectedOption ? selectedOption.label : placeholder}
+        <span className="text-xs sm:text-sm truncate min-w-0 flex-1 text-left flex items-center gap-2">
+          {loading ? 'Loading...' : selectedOption ? (
+            <>
+              <span className="truncate">{selectedOption.label}</span>
+              {selectedOption.badge && (
+                <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-500 text-white text-xs font-bold rounded-full">
+                  <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                  {selectedOption.badge}
+                </span>
+              )}
+            </>
+          ) : placeholder}
         </span>
         <ChevronDown className={`w-3 h-3 sm:w-4 sm:h-4 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -83,9 +93,16 @@ export const CustomSelect = ({
                   ${String(option.value) === String(value) ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400' : 'text-slate-900 dark:text-white'}
                   transition-colors
                   first:rounded-t-lg last:rounded-b-lg
+                  flex items-center justify-between gap-2
                 `}
               >
-                {option.label}
+                <span className="flex-1 truncate">{option.label}</span>
+                {option.badge && (
+                  <span className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 bg-green-500 text-white text-xs font-bold rounded-full">
+                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                    {option.badge}
+                  </span>
+                )}
               </button>
             ))
           )}

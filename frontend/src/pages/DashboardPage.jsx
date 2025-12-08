@@ -148,7 +148,7 @@ const UniversityStats = () => {
       </div>
 
       {/* Info Message */}
-      <div className="bg-slate-800/30 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-700/50">
+      <div className="bg-white dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700/50 shadow-sm">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
             <BookOpen className="w-5 h-5 text-cyan-400" />
@@ -295,7 +295,7 @@ export const DashboardPage = () => {
       </div>
 
       {/* Current Sessions Section */}
-      <div className="bg-slate-800/30 dark:bg-slate-900/50 backdrop-blur-sm rounded-xl shadow-lg border border-slate-700/50 dark:border-slate-600/50 p-4 sm:p-6">
+      <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200 dark:border-slate-600/50 p-4 sm:p-6">
         {loadingSessions ? (
           <div className="flex items-center justify-center py-12 sm:py-20">
             <div className="flex flex-col items-center gap-4">

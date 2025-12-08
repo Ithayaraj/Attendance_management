@@ -22,6 +22,9 @@ export const SessionsPage = () => {
   const [editing, setEditing] = useState(null);
   const coursesLoadedRef = useRef(false);
   const isRestoringRef = useRef(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+  const [batchActiveSessions, setBatchActiveSessions] = useState({});
 
   const BATCHES_CACHE_KEY = 'sessions_batches_cache';
   const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -60,6 +63,47 @@ export const SessionsPage = () => {
     }
   };
 
+  // Helper function to get faculty name from department
+  const getFacultyFromDepartment = (departmentName) => {
+    for (const [facultyName, facultyData] of Object.entries(facultyStructure)) {
+      const found = facultyData.departments.find(d => d.name === departmentName);
+      if (found) return facultyName;
+    }
+    return null;
+  };
+
+  // Load active sessions count for all batches
+  const loadBatchActiveSessions = async (batchesList) => {
+    try {
+      // Get today's date
+      const today = new Date().toISOString().slice(0, 10);
+      
+      // Fetch all sessions for today
+      const res = await apiClient.get('/api/analytics/current-sessions');
+      const currentSessions = res.data?.data || res.data || [];
+      
+      // Count active sessions per batch (department + year + semester)
+      const activeSessionsMap = {};
+      
+      batchesList.forEach(batch => {
+        const batchKey = `${batch.department}-${batch.currentYear}-${batch.currentSemester}`;
+        const count = currentSessions.filter(s => 
+          s.department === batch.department &&
+          s.year === batch.currentYear &&
+          s.semester === batch.currentSemester &&
+          s.status === 'live'
+        ).length;
+        
+        activeSessionsMap[batchKey] = count;
+      });
+      
+      setBatchActiveSessions(activeSessionsMap);
+    } catch (error) {
+      console.error('Error loading batch active sessions:', error);
+      setBatchActiveSessions({});
+    }
+  };
+
   // Filter courses by selected batch (department, year, semester)
   const filteredCourses = useMemo(() => {
     if (!selectedBatch) return [];
@@ -85,6 +129,19 @@ export const SessionsPage = () => {
   }, [sessions, selectedBatch]);
 
   const hasActiveSessions = activeSessions.length > 0;
+
+  // Pagination logic
+  const totalPages = Math.ceil(sessions.length / ITEMS_PER_PAGE);
+  const paginatedSessions = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return sessions.slice(startIndex, endIndex);
+  }, [sessions, currentPage]);
+
+  // Reset to page 1 when sessions change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sessions]);
   const roundToQuarter = (date) => {
     const d = new Date(date);
     const minutes = d.getMinutes();
@@ -321,6 +378,9 @@ export const SessionsPage = () => {
         const batchesData = Array.isArray(response) ? response : (response?.data || []);
         setBatches(batchesData);
         
+        // Load active sessions count for each batch
+        await loadBatchActiveSessions(batchesData);
+        
         // Cache the data
         sessionStorage.setItem(BATCHES_CACHE_KEY, JSON.stringify({
           data: batchesData,
@@ -469,14 +529,138 @@ export const SessionsPage = () => {
     return () => clearInterval(interval);
   }, [selectedCourseId, sessions, checkAndUpdateSessionStatuses]);
 
+  // Check if there's a room conflict within the same faculty
+  const checkRoomConflict = async (date, startTime, endTime, room, department) => {
+    try {
+      // Fetch ALL sessions for the given date and room to check conflicts across all departments
+      const response = await apiClient.get('/api/sessions', {
+        params: {
+          date,
+          room,
+          status: ['live', 'scheduled'] // Only check active sessions
+        }
+      });
+      
+      const allSessions = response.data || [];
+      
+      // Filter for conflicts within the same department only
+      const conflictingSessions = allSessions.filter(s => {
+        // Skip closed sessions
+        if (s.status === 'closed') return false;
+        
+        // Must be same date and room (already filtered by API, but double-check)
+        if (s.date !== date || s.room !== room) return false;
+        
+        // Get the department from the session's course
+        // The courseId might be populated or just an ID
+        let sessionDept = null;
+        if (s.courseId) {
+          if (typeof s.courseId === 'object') {
+            sessionDept = s.courseId.department;
+          } else {
+            // If courseId is just an ID, find it in our courses list
+            const course = courses.find(c => c._id === s.courseId);
+            sessionDept = course?.department;
+          }
+        }
+        
+        // Only check conflicts within the same department
+        if (!sessionDept || sessionDept !== department) return false;
+        
+        // Check time overlap
+        const newStart = getSessionDateTime(date, startTime);
+        const newEnd = getSessionDateTime(date, endTime);
+        const existingStart = getSessionDateTime(s.date, s.startTime);
+        let existingEnd = getSessionDateTime(s.date, s.endTime);
+        
+        if (!newStart || !newEnd || !existingStart || !existingEnd) return false;
+        
+        // Handle midnight rollover for existing session
+        if (existingEnd < existingStart) {
+          existingEnd.setDate(existingEnd.getDate() + 1);
+        }
+        
+        // Handle midnight rollover for new session
+        let adjustedNewEnd = new Date(newEnd);
+        if (adjustedNewEnd < newStart) {
+          adjustedNewEnd.setDate(adjustedNewEnd.getDate() + 1);
+        }
+        
+        // Check if times overlap: (newStart < existingEnd) && (newEnd > existingStart)
+        return (newStart < existingEnd) && (adjustedNewEnd > existingStart);
+      });
+      
+      return conflictingSessions;
+    } catch (error) {
+      console.error('Error checking room conflicts:', error);
+      // Fallback to local check if API fails
+      return sessions.filter(s => {
+        if (s.status === 'closed') return false;
+        if (s.date !== date || s.room !== room) return false;
+        
+        const sessionDept = s.courseId?.department;
+        if (!sessionDept || sessionDept !== department) return false;
+        
+        const newStart = getSessionDateTime(date, startTime);
+        const newEnd = getSessionDateTime(date, endTime);
+        const existingStart = getSessionDateTime(s.date, s.startTime);
+        let existingEnd = getSessionDateTime(s.date, s.endTime);
+        
+        if (!newStart || !newEnd || !existingStart || !existingEnd) return false;
+        
+        if (existingEnd < existingStart) {
+          existingEnd.setDate(existingEnd.getDate() + 1);
+        }
+        
+        let adjustedNewEnd = new Date(newEnd);
+        if (adjustedNewEnd < newStart) {
+          adjustedNewEnd.setDate(adjustedNewEnd.getDate() + 1);
+        }
+        
+        return (newStart < existingEnd) && (adjustedNewEnd > existingStart);
+      });
+    }
+  };
+
   const createSession = async (e) => {
     e.preventDefault();
     if (!selectedCourseId) {
       showWarning('Please select a course first', 'Course Required');
       return;
     }
+    
+    // Get the faculty/department of the selected course
+    const selectedCourse = courses.find(c => c._id === selectedCourseId);
+    if (!selectedCourse) {
+      showError('Selected course not found', 'Error');
+      return;
+    }
+    
     setCreating(true);
+    
     try {
+      // Check for room conflicts within the same department
+      const conflicts = await checkRoomConflict(
+        form.date, 
+        form.startTime, 
+        form.endTime, 
+        form.room, 
+        selectedCourse.department
+      );
+      
+      if (conflicts.length > 0) {
+        const conflictDetails = conflicts.map(s => {
+          const courseCode = typeof s.courseId === 'object' ? s.courseId?.code : 
+                            courses.find(c => c._id === s.courseId)?.code;
+          return `${courseCode || 'N/A'} (${s.startTime}-${s.endTime})`;
+        }).join(', ');
+        showError(
+          `Room ${form.room} is already booked for ${selectedCourse.department} on ${form.date}. Conflicting sessions: ${conflictDetails}`,
+          'Room Conflict'
+        );
+        return;
+      }
+      
       const payload = {
         date: form.date,
         startTime: form.startTime,
@@ -520,7 +704,39 @@ export const SessionsPage = () => {
 
   const saveEdit = async (e) => {
     e.preventDefault();
+    
+    // Get the faculty/department of the session being edited
+    const sessionCourse = courses.find(c => c._id === editing.courseId?._id);
+    if (!sessionCourse) {
+      showError('Course not found for this session', 'Error');
+      return;
+    }
+    
     try {
+      // Check for room conflicts (excluding the current session being edited)
+      const allConflicts = await checkRoomConflict(
+        form.date, 
+        form.startTime, 
+        form.endTime, 
+        form.room, 
+        sessionCourse.department
+      );
+      
+      const conflicts = allConflicts.filter(s => s._id !== editing._id); // Exclude current session
+      
+      if (conflicts.length > 0) {
+        const conflictDetails = conflicts.map(s => {
+          const courseCode = typeof s.courseId === 'object' ? s.courseId?.code : 
+                            courses.find(c => c._id === s.courseId)?.code;
+          return `${courseCode || 'N/A'} (${s.startTime}-${s.endTime})`;
+        }).join(', ');
+        showError(
+          `Room ${form.room} is already booked for ${sessionCourse.department} on ${form.date}. Conflicting sessions: ${conflictDetails}`,
+          'Room Conflict'
+        );
+        return;
+      }
+      
       await apiClient.put(`/api/sessions/${editing._id}`, {
         date: form.date,
         startTime: form.startTime,
@@ -577,10 +793,18 @@ export const SessionsPage = () => {
                 placeholder={loadingBatches ? 'Loading batches...' : 'Select a batch'}
                 options={[
                   { value: '', label: loadingBatches ? 'Loading batches...' : (batches.length === 0 ? 'No batches available' : 'Select a batch') },
-                  ...(Array.isArray(batches) ? batches.map((b) => ({
-                    value: b._id,
-                    label: `${b.startYear} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`
-                  })) : [])
+                  ...(Array.isArray(batches) ? batches.map((b) => {
+                    const faculty = getFacultyFromDepartment(b.department);
+                    const facultyShort = faculty ? faculty.replace('Faculty of ', '') : '';
+                    const batchKey = `${b.department}-${b.currentYear}-${b.currentSemester}`;
+                    const activeCount = batchActiveSessions[batchKey] || 0;
+                    const liveIndicator = activeCount > 0 ? `🟢 ${activeCount} | ` : '';
+                    const batchLabel = `${liveIndicator}${b.startYear} - ${facultyShort} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`;
+                    return {
+                      value: b._id,
+                      label: batchLabel
+                    };
+                  }) : [])
                 ]}
               />
             </div>
@@ -607,7 +831,7 @@ export const SessionsPage = () => {
           {selectedBatch && (
             <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                <span className="font-medium">Selected:</span> {selectedBatch.department} - Year {selectedBatch.currentYear}, Semester {selectedBatch.currentSemester}
+                <span className="font-medium">Selected:</span> {getFacultyFromDepartment(selectedBatch.department)?.replace('Faculty of ', '') || ''} - {selectedBatch.department} - Year {selectedBatch.currentYear}, Semester {selectedBatch.currentSemester}
                 {filteredCourses.length > 0 && (
                   <span className="ml-2">• {filteredCourses.length} course{filteredCourses.length !== 1 ? 's' : ''} available</span>
                 )}
@@ -718,7 +942,7 @@ export const SessionsPage = () => {
                 ) : sessions.length === 0 ? (
                   <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
                 ) : (
-                  sessions.map(s => (
+                  paginatedSessions.map(s => (
                     <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                       <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">
                         {s.courseId?.code || 'N/A'}
@@ -755,6 +979,46 @@ export const SessionsPage = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {selectedBatch && sessions.length > 0 && (
+          <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-sm text-slate-600 dark:text-slate-400">
+              Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, sessions.length)} of {sessions.length} sessions
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300"
+              >
+                Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-3 py-1.5 text-sm rounded-lg ${
+                      currentPage === page
+                        ? 'bg-cyan-600 text-white'
+                        : 'border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

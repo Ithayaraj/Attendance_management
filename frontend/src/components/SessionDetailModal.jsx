@@ -111,13 +111,13 @@ export const SessionDetailModal = ({ session, onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4" onClick={onClose}>
       <div
-        className="bg-slate-900 rounded-xl sm:rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto border border-slate-700"
+        className="bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button - Top Right */}
         <button
           onClick={onClose}
-          className="sticky top-2 sm:top-4 float-right mr-2 sm:mr-4 mt-2 sm:mt-4 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-slate-800 hover:bg-slate-700 text-white shadow-lg z-10 transition-all"
+          className="sticky top-2 sm:top-4 float-right mr-2 sm:mr-4 mt-2 sm:mt-4 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-900 dark:text-white shadow-lg z-10 transition-all"
         >
           <X className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
@@ -125,7 +125,7 @@ export const SessionDetailModal = ({ session, onClose }) => {
         {/* Content */}
         <div className="p-3 sm:p-6">
           {/* Header Section */}
-          <div className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-xl p-4 sm:p-5 mb-4 border border-slate-600">
+          <div className="bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 sm:p-5 mb-4 border border-slate-300 dark:border-slate-600">
             <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4">
               <div className="flex-1 w-full">
                 {/* Faculty Badge */}
@@ -138,26 +138,26 @@ export const SessionDetailModal = ({ session, onClose }) => {
 
                 {/* Course Info */}
                 <div className="flex items-center gap-2 mb-3">
-                  <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-400" />
+                  <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-600 dark:text-cyan-400" />
                   <div>
-                    <h1 className="text-xl sm:text-2xl font-extrabold text-white">{session.courseCode}</h1>
-                    <p className="text-xs sm:text-sm text-slate-300">{session.courseName}</p>
+                    <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white">{session.courseCode}</h1>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">{session.courseName}</p>
                   </div>
                 </div>
 
                 {/* Session Details Row */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-700/50 rounded-md border border-slate-600">
-                    <Calendar className="w-3 h-3 text-blue-400" />
-                    <span className="text-xs font-semibold text-slate-200">{session.date}</span>
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-700/50 rounded-md border border-slate-300 dark:border-slate-600">
+                    <Calendar className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{session.date}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-700/50 rounded-md border border-slate-600">
-                    <Clock className="w-3 h-3 text-cyan-400" />
-                    <span className="text-xs font-semibold text-slate-200">{session.startTime} - {session.endTime}</span>
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-700/50 rounded-md border border-slate-300 dark:border-slate-600">
+                    <Clock className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{session.startTime} - {session.endTime}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-700/50 rounded-md border border-slate-600">
-                    <MapPin className="w-3 h-3 text-purple-400" />
-                    <span className="text-xs font-semibold text-slate-200">{session.room}</span>
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-700/50 rounded-md border border-slate-300 dark:border-slate-600">
+                    <MapPin className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{session.room}</span>
                   </div>
                   {session.status === 'live' && (
                     <div className="flex items-center gap-1.5 px-3 py-1 bg-green-500 rounded-md shadow-md">
@@ -242,8 +242,8 @@ export const SessionDetailModal = ({ session, onClose }) => {
           {/* Charts Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Pie Chart */}
-            <div className="bg-slate-800 rounded-lg p-4 shadow-md border border-slate-700">
-              <h3 className="text-sm sm:text-base font-bold text-white mb-3 flex items-center gap-2">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 shadow-md border border-slate-200 dark:border-slate-700">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                 <div className="w-1 h-5 bg-cyan-500 rounded"></div>
                 Attendance Distribution
               </h3>
@@ -261,31 +261,39 @@ export const SessionDetailModal = ({ session, onClose }) => {
                       dataKey="value"
                     >
                       {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} stroke="#1e293b" strokeWidth={2} />
+                        <Cell key={`cell-${index}`} fill={entry.color} stroke="#ffffff" className="dark:stroke-slate-900" strokeWidth={2} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value, name, props) => [`${value} students (${props.payload.percentage}%)`, name]} />
-                    <Legend iconSize={10} wrapperStyle={{ fontSize: '12px' }} />
+                    <Tooltip 
+                      formatter={(value, name, props) => [`${value} students (${props.payload.percentage}%)`, name]}
+                      contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
+                      labelStyle={{ color: '#1e293b' }}
+                      itemStyle={{ color: '#475569' }}
+                      wrapperClassName="dark:[&>div]:!bg-slate-800 dark:[&>div]:!border-slate-600"
+                    />
+                    <Legend iconSize={10} wrapperStyle={{ fontSize: '12px', color: '#475569' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
             {/* Bar Chart */}
-            <div className="bg-slate-800 rounded-lg p-4 shadow-md border border-slate-700">
-              <h3 className="text-sm sm:text-base font-bold text-white mb-3 flex items-center gap-2">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 shadow-md border border-slate-200 dark:border-slate-700">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                 <div className="w-1 h-5 bg-cyan-500 rounded"></div>
                 Student Count Breakdown
               </h3>
               <div className="h-56 sm:h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={barData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-                    <XAxis dataKey="name" stroke="#94a3b8" style={{ fontSize: '11px' }} />
-                    <YAxis stroke="#94a3b8" style={{ fontSize: '11px' }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" className="dark:stroke-slate-600" />
+                    <XAxis dataKey="name" stroke="#64748b" className="dark:stroke-slate-400" style={{ fontSize: '11px' }} />
+                    <YAxis stroke="#64748b" className="dark:stroke-slate-400" style={{ fontSize: '11px' }} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', fontSize: '12px' }}
-                      labelStyle={{ color: '#fff' }}
+                      contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
+                      labelStyle={{ color: '#1e293b' }}
+                      itemStyle={{ color: '#475569' }}
+                      wrapperClassName="dark:[&>div]:!bg-slate-800 dark:[&>div]:!border-slate-600"
                     />
                     <Bar dataKey="value" radius={[6, 6, 0, 0]} />
                   </BarChart>
@@ -298,11 +306,11 @@ export const SessionDetailModal = ({ session, onClose }) => {
         {/* Student List Modal */}
         {showStudentList && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setShowStudentList(null)}>
-          <div className="bg-slate-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden border border-slate-700" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden border border-slate-200 dark:border-slate-700" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="p-4 border-b border-slate-700 flex items-center justify-between bg-slate-800">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-cyan-400" />
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50 dark:bg-slate-800">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
                 {showStudentList === 'total' && 'All Students in Batch'}
                 {showStudentList === 'present' && 'Present Students'}
                 {showStudentList === 'late' && 'Late Students'}
@@ -328,7 +336,7 @@ export const SessionDetailModal = ({ session, onClose }) => {
               ) : (
                 <div className="space-y-2">
                   {students.map((student, index) => (
-                    <div key={student._id || index} className="bg-slate-800 rounded-lg p-3 hover:bg-slate-750 transition-colors">
+                    <div key={student._id || index} className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 hover:bg-slate-100 dark:hover:bg-slate-750 transition-colors border border-slate-200 dark:border-slate-700">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="font-semibold text-white">{student.name}</div>

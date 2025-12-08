@@ -51,6 +51,15 @@ export const CoursesPage = () => {
     }
   };
 
+  // Helper function to get faculty name from department
+  const getFacultyFromDepartment = (departmentName) => {
+    for (const [facultyName, facultyData] of Object.entries(facultyStructure)) {
+      const found = facultyData.departments.find(d => d.name === departmentName);
+      if (found) return facultyName;
+    }
+    return null;
+  };
+
   // Load batches
   useEffect(() => {
     const load = async () => {
@@ -288,10 +297,14 @@ export const CoursesPage = () => {
                 placeholder={loadingBatches ? 'Loading batches...' : 'Select a batch'}
                 options={[
                   { value: '', label: loadingBatches ? 'Loading batches...' : (batches.length === 0 ? 'No batches available' : 'Select a batch') },
-                  ...(Array.isArray(batches) ? batches.map((b) => ({
-                    value: b._id,
-                    label: `${b.startYear} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`
-                  })) : [])
+                  ...(Array.isArray(batches) ? batches.map((b) => {
+                    const faculty = getFacultyFromDepartment(b.department);
+                    const facultyShort = faculty ? faculty.replace('Faculty of ', '') : '';
+                    return {
+                      value: b._id,
+                      label: `${b.startYear} - ${facultyShort} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`
+                    };
+                  }) : [])
                 ]}
               />
             </div>
@@ -313,7 +326,7 @@ export const CoursesPage = () => {
           {selectedBatch && (
             <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                <span className="font-medium">Selected:</span> {selectedBatch.department} - Year {selectedBatch.currentYear}, Semester {selectedBatch.currentSemester}
+                <span className="font-medium">Selected:</span> {getFacultyFromDepartment(selectedBatch.department)?.replace('Faculty of ', '') || ''} - {selectedBatch.department} - Year {selectedBatch.currentYear}, Semester {selectedBatch.currentSemester}
               </p>
             </div>
           )}
@@ -327,6 +340,7 @@ export const CoursesPage = () => {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Code</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Faculty</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Department</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Year</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Semester</th>
@@ -337,13 +351,13 @@ export const CoursesPage = () => {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {!selectedBatch ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan="8" className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
                     <p>Please select a batch to view courses</p>
                   </td>
                 </tr>
               ) : loading ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center">
+                  <td colSpan="8" className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center gap-3">
                       <LoadingSpinner size="lg" className="text-cyan-600" />
                       <span className="text-slate-500 dark:text-slate-400">Loading courses...</span>
@@ -351,26 +365,31 @@ export const CoursesPage = () => {
                   </td>
                 </tr>
               ) : filteredCourses.length === 0 ? (
-                <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">
+                <tr><td colSpan="8" className="px-6 py-12 text-center text-slate-500">
                   {courses.length === 0 ? 'No courses found' : 'No courses match the selected filters'}
                 </td></tr>
               ) : (
-                filteredCourses.map(c => (
-                  <tr key={c._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{c.code}</td>
-                    <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{c.name}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{c.department || '-'}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{getYearSemesterFromCode(c.code)?.year ?? '-'}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{getYearSemesterFromCode(c.code)?.semester ?? '-'}</td>
-                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{getCreditsFromCode(c.code)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openEdit(c)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
-                        <button onClick={() => remove(c._id)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                filteredCourses.map(c => {
+                  const faculty = getFacultyFromDepartment(c.department);
+                  const facultyShort = faculty ? faculty.replace('Faculty of ', '') : '-';
+                  return (
+                    <tr key={c._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                      <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{c.code}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{c.name}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{facultyShort}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{c.department || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{getYearSemesterFromCode(c.code)?.year ?? '-'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{getYearSemesterFromCode(c.code)?.semester ?? '-'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{getCreditsFromCode(c.code)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => openEdit(c)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
+                          <button onClick={() => remove(c._id)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

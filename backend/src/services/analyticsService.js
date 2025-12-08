@@ -211,30 +211,114 @@ export const getBatchLineAnalytics = async (startYear) => {
 };
 
 export const getCurrentSessions = async () => {
-  // Get today's sessions that are live or scheduled
+  // Get yesterday's, today's, and tomorrow's sessions (to handle timezone differences and midnight rollover)
+  const now = new Date();
   const today = new Date().toISOString().slice(0, 10);
   
-  // Get current time in HH:MM format
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+  
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  
+  console.log(`📅 getCurrentSessions - Yesterday: ${yesterdayStr}, Today: ${today}, Tomorrow: ${tomorrowStr}, Current time: ${now.toISOString()}`);
   
   const sessions = await ClassSession.find({
-    date: today,
+    date: { $in: [yesterdayStr, today, tomorrowStr] },
     status: { $in: ['live', 'scheduled'] }
   })
     .populate('courseId')
     .sort({ year: 1, semester: 1, startTime: 1 }); // Sort hierarchically: year -> semester -> time
+  
+  console.log(`📊 Found ${sessions.length} sessions with live/scheduled status`);
+  sessions.forEach(s => {
+    console.log(`  - ${s.courseId?.code}: ${s.date} ${s.startTime}-${s.endTime} [${s.status}]`);
+  });
 
-  // Auto-close sessions that have passed their end time
+  // Helper function to check if session has ended
+  const hasSessionEnded = (session) => {
+    const [startHour, startMinute] = session.startTime.split(':').map(Number);
+    const [endHour, endMinute] = session.endTime.split(':').map(Number);
+    
+    const sessionDate = new Date(session.date);
+    const sessionStartDateTime = new Date(sessionDate);
+    sessionStartDateTime.setHours(startHour, startMinute, 0, 0);
+    
+    let sessionEndDateTime = new Date(sessionDate);
+    sessionEndDateTime.setHours(endHour, endMinute, 0, 0);
+    
+    // Handle midnight rollover (e.g., session from 23:00 to 01:00)
+    if (sessionEndDateTime < sessionStartDateTime) {
+      sessionEndDateTime.setDate(sessionEndDateTime.getDate() + 1);
+    }
+    
+    return now > sessionEndDateTime;
+  };
+
+  // Helper function to check if session should be live
+  const shouldBeLive = (session) => {
+    const [startHour, startMinute] = session.startTime.split(':').map(Number);
+    const [endHour, endMinute] = session.endTime.split(':').map(Number);
+    
+    const sessionDate = new Date(session.date);
+    const sessionStartDateTime = new Date(sessionDate);
+    sessionStartDateTime.setHours(startHour, startMinute, 0, 0);
+    
+    let sessionEndDateTime = new Date(sessionDate);
+    sessionEndDateTime.setHours(endHour, endMinute, 0, 0);
+    
+    // Handle midnight rollover
+    if (sessionEndDateTime < sessionStartDateTime) {
+      sessionEndDateTime.setDate(sessionEndDateTime.getDate() + 1);
+    }
+    
+    return now >= sessionStartDateTime && now < sessionEndDateTime;
+  };
+
+  // Auto-update session statuses
   for (const session of sessions) {
-    if (session.status === 'live' && session.endTime < currentTime) {
+    // Close sessions that have ended
+    if ((session.status === 'live' || session.status === 'scheduled') && hasSessionEnded(session)) {
       session.status = 'closed';
       await session.save();
+      console.log(`Auto-closed session ${session._id} (${session.courseId?.code})`);
+    }
+    // Set scheduled sessions to live if their start time has passed
+    else if (session.status === 'scheduled' && shouldBeLive(session)) {
+      session.status = 'live';
+      await session.save();
+      console.log(`Auto-set session ${session._id} (${session.courseId?.code}) to live`);
     }
   }
 
-  // Filter out closed sessions
-  const activeSessions = sessions.filter(s => s.status !== 'closed');
+  // Filter sessions based on actual current time (not just date)
+  const activeSessions = sessions.filter(s => {
+    if (s.status === 'closed') {
+      console.log(`  ❌ Filtered out ${s.courseId?.code} - status is closed`);
+      return false;
+    }
+    
+    // Check if session is currently active based on actual time
+    const isCurrentlyActive = shouldBeLive(s) || (s.status === 'live' && !hasSessionEnded(s));
+    
+    if (isCurrentlyActive) {
+      console.log(`  ✅ Including ${s.courseId?.code} (${s.date}) - currently active`);
+      return true;
+    }
+    
+    // For scheduled sessions, only include if they're today or will start soon
+    if (s.status === 'scheduled' && s.date === today) {
+      console.log(`  ✅ Including ${s.courseId?.code} - scheduled for today`);
+      return true;
+    }
+    
+    console.log(`  ❌ Filtered out ${s.courseId?.code} (${s.date}) - not currently active`);
+    return false;
+  });
+  
+  console.log(`✅ Final active sessions count: ${activeSessions.length}`);
 
   const sessionsWithStats = await Promise.all(
     activeSessions.map(async (session) => {
@@ -243,8 +327,10 @@ export const getCurrentSessions = async () => {
       
       // Get total students based on session's year, semester, and department
       // This matches students in the same batch as the session
+      // Use session.department first (new field), fallback to courseId.department
+      const department = session.department || session.courseId?.department;
       const totalStudents = await Student.countDocuments({
-        department: session.courseId?.department,
+        department: department,
         year: session.year,
         semester: session.semester
       });
@@ -263,7 +349,7 @@ export const getCurrentSessions = async () => {
         id: session._id,
         courseCode: session.courseId?.code,
         courseName: session.courseId?.name,
-        department: session.courseId?.department,
+        department: department, // Use the resolved department
         date: session.date,
         startTime: session.startTime,
         endTime: session.endTime,
@@ -310,4 +396,319 @@ export const getStudentAttendance = async (studentId, fromDate, toDate) => {
   }));
 
   return enriched;
+};
+
+export const getBatchWiseAttendance = async () => {
+  const { Batch } = await import('../models/Batch.js');
+  
+  // Get all batches
+  const batches = await Batch.find({}).sort({ startYear: -1, department: 1 });
+  
+  const batchStats = await Promise.all(
+    batches.map(async (batch) => {
+      // Get all students in this batch
+      const students = await Student.find({
+        department: batch.department,
+        year: batch.currentYear
+      });
+      
+      const studentIds = students.map(s => s._id);
+      
+      // Get all sessions for this batch
+      const sessions = await ClassSession.find({
+        year: batch.currentYear,
+        semester: batch.currentSemester
+      }).select('_id');
+      
+      const sessionIds = sessions.map(s => s._id);
+      
+      // Get attendance records
+      const records = await AttendanceRecord.find({
+        studentId: { $in: studentIds },
+        sessionId: { $in: sessionIds }
+      });
+      
+      // Calculate stats
+      const stats = { present: 0, late: 0, absent: 0 };
+      for (const r of records) {
+        stats[r.status]++;
+      }
+      
+      // Calculate expected total (students × sessions)
+      const expectedTotal = students.length * sessions.length;
+      const recordedTotal = stats.present + stats.late + stats.absent;
+      stats.absent += Math.max(0, expectedTotal - recordedTotal);
+      
+      const total = stats.present + stats.late + stats.absent;
+      const attendanceRate = total > 0 ? ((stats.present + stats.late) / total * 100) : 0;
+      
+      return {
+        batchId: batch._id,
+        batchName: batch.name || `${batch.department} - ${batch.startYear}`,
+        startYear: batch.startYear,
+        department: batch.department,
+        currentYear: batch.currentYear,
+        currentSemester: batch.currentSemester,
+        totalStudents: students.length,
+        totalSessions: sessions.length,
+        present: stats.present,
+        late: stats.late,
+        absent: stats.absent,
+        attendanceRate: attendanceRate.toFixed(1)
+      };
+    })
+  );
+  
+  return batchStats;
+};
+
+export const getBatchCourseAttendance = async (batchId, courseId, startDate = null, endDate = null) => {
+  const { Batch } = await import('../models/Batch.js');
+  const { Course } = await import('../models/Course.js');
+  
+  const batch = await Batch.findById(batchId);
+  if (!batch) {
+    throw new Error('Batch not found');
+  }
+  
+  const course = await Course.findById(courseId);
+  if (!course) {
+    throw new Error('Course not found');
+  }
+  
+  // Get all students in this batch
+  const students = await Student.find({
+    department: batch.department,
+    year: batch.currentYear
+  });
+  
+  const studentIds = students.map(s => s._id);
+  
+  // Build session query with optional date range
+  const sessionQuery = {
+    courseId: courseId,
+    year: batch.currentYear,
+    semester: batch.currentSemester
+  };
+  
+  // Add date range filter if provided
+  if (startDate && endDate) {
+    sessionQuery.date = { $gte: startDate, $lte: endDate };
+  } else if (startDate) {
+    sessionQuery.date = { $gte: startDate };
+  } else if (endDate) {
+    sessionQuery.date = { $lte: endDate };
+  }
+  
+  // Get sessions for this batch and course
+  const sessions = await ClassSession.find(sessionQuery).select('_id');
+  
+  const sessionIds = sessions.map(s => s._id);
+  
+  // Get attendance records
+  const records = await AttendanceRecord.find({
+    studentId: { $in: studentIds },
+    sessionId: { $in: sessionIds }
+  });
+  
+  // Calculate stats
+  const stats = { present: 0, late: 0, absent: 0 };
+  for (const r of records) {
+    stats[r.status]++;
+  }
+  
+  // Calculate expected total (students × sessions)
+  // Only calculate absents if there are sessions in the date range
+  if (sessions.length > 0) {
+    const expectedTotal = students.length * sessions.length;
+    const recordedTotal = stats.present + stats.late + stats.absent;
+    stats.absent += Math.max(0, expectedTotal - recordedTotal);
+  }
+  
+  const total = stats.present + stats.late + stats.absent;
+  const attendanceRate = total > 0 ? ((stats.present + stats.late) / total * 100) : 0;
+  
+  return {
+    batchId: batch._id,
+    batchName: batch.name || `${batch.department} - ${batch.startYear}`,
+    courseId: course._id,
+    courseCode: course.code,
+    courseName: course.name,
+    totalStudents: students.length,
+    totalSessions: sessions.length,
+    present: stats.present,
+    late: stats.late,
+    absent: stats.absent,
+    attendanceRate: attendanceRate.toFixed(1),
+    dateRange: (startDate && endDate) ? { startDate, endDate } : null
+  };
+};
+
+export const getBatchCourses = async (batchId) => {
+  const { Batch } = await import('../models/Batch.js');
+  const { Course } = await import('../models/Course.js');
+  
+  const batch = await Batch.findById(batchId);
+  if (!batch) {
+    throw new Error('Batch not found');
+  }
+  
+  // Get all sessions for this batch
+  const sessions = await ClassSession.find({
+    year: batch.currentYear,
+    semester: batch.currentSemester
+  }).populate('courseId').select('courseId');
+  
+  // Extract unique courses
+  const courseMap = new Map();
+  for (const session of sessions) {
+    if (session.courseId) {
+      courseMap.set(session.courseId._id.toString(), {
+        _id: session.courseId._id,
+        code: session.courseId.code,
+        name: session.courseId.name,
+        department: session.courseId.department
+      });
+    }
+  }
+  
+  return Array.from(courseMap.values());
+};
+
+export const getBatchStudents = async (batchId, page = 1, limit = 10, search = '') => {
+  const { Batch } = await import('../models/Batch.js');
+  
+  const batch = await Batch.findById(batchId);
+  if (!batch) {
+    throw new Error('Batch not found');
+  }
+  
+  // Build query for students
+  const query = {
+    department: batch.department,
+    year: batch.currentYear
+  };
+  
+  // Add search filter if provided
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { registrationNo: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { mobile: { $regex: search, $options: 'i' } }
+    ];
+  }
+  
+  // Get total count
+  const total = await Student.countDocuments(query);
+  
+  // Get paginated students
+  const students = await Student.find(query)
+    .select('_id name registrationNo email mobile year semester')
+    .sort({ name: 1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+  
+  return {
+    students,
+    pagination: {
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit)
+    }
+  };
+};
+
+export const getStudentCourseAttendance = async (studentId, batchId, startDate = null, endDate = null) => {
+  const { Batch } = await import('../models/Batch.js');
+  
+  const batch = await Batch.findById(batchId);
+  if (!batch) {
+    throw new Error('Batch not found');
+  }
+  
+  const student = await Student.findById(studentId);
+  if (!student) {
+    throw new Error('Student not found');
+  }
+  
+  // Build session query with optional date range
+  const sessionQuery = {
+    year: batch.currentYear,
+    semester: batch.currentSemester
+  };
+  
+  // Add date range filter if provided
+  if (startDate && endDate) {
+    sessionQuery.date = { $gte: startDate, $lte: endDate };
+  } else if (startDate) {
+    sessionQuery.date = { $gte: startDate };
+  } else if (endDate) {
+    sessionQuery.date = { $lte: endDate };
+  }
+  
+  // Get all sessions for this batch
+  const sessions = await ClassSession.find(sessionQuery).populate('courseId').select('_id courseId');
+  
+  const sessionIds = sessions.map(s => s._id);
+  
+  // Get attendance records for this student
+  const records = await AttendanceRecord.find({
+    studentId: studentId,
+    sessionId: { $in: sessionIds }
+  });
+  
+  // Group by course
+  const courseMap = new Map();
+  
+  for (const session of sessions) {
+    if (!session.courseId) continue;
+    
+    const courseId = session.courseId._id.toString();
+    if (!courseMap.has(courseId)) {
+      courseMap.set(courseId, {
+        courseId: session.courseId._id,
+        courseCode: session.courseId.code,
+        courseName: session.courseId.name,
+        present: 0,
+        late: 0,
+        absent: 0,
+        totalSessions: 0
+      });
+    }
+    
+    const courseData = courseMap.get(courseId);
+    courseData.totalSessions++;
+    
+    // Find attendance record for this session
+    const record = records.find(r => r.sessionId.toString() === session._id.toString());
+    if (record) {
+      courseData[record.status]++;
+    } else {
+      courseData.absent++;
+    }
+  }
+  
+  const courseStats = Array.from(courseMap.values()).map(course => {
+    const total = course.present + course.late + course.absent;
+    const attendanceRate = total > 0 ? ((course.present + course.late) / total * 100) : 0;
+    return {
+      ...course,
+      attendanceRate: attendanceRate.toFixed(1)
+    };
+  });
+  
+  return {
+    student: {
+      _id: student._id,
+      name: student.name,
+      registrationNo: student.registrationNo,
+      email: student.email,
+      year: student.year,
+      semester: student.semester
+    },
+    courses: courseStats,
+    dateRange: (startDate && endDate) ? { startDate, endDate } : null
+  };
 };

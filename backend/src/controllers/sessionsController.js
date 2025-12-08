@@ -146,10 +146,12 @@ export const createSession = async (req, res, next) => {
     
     console.log(`No active sessions found for this batch`);
 
-    // Check for room conflicts (same room, same date, overlapping time)
+    // Check for room conflicts (same room, same date, same department, overlapping time)
+    // Different departments can use rooms with the same name (they're in different buildings)
     const roomConflict = await ClassSession.findOne({
       room: room,
       date: date,
+      department: course.department, // Only check within same department
       status: { $in: ['live', 'scheduled'] },
       _id: { $ne: req.body.sessionId },
       $or: [
@@ -174,8 +176,41 @@ export const createSession = async (req, res, next) => {
     if (roomConflict) {
       return res.status(400).json({
         success: false,
-        message: `Room "${room}" is already booked on ${date} from ${roomConflict.startTime} to ${roomConflict.endTime} for ${roomConflict.courseId.code}. Please choose a different room or time.`
+        message: `Room "${room}" is already booked for ${course.department} on ${date} from ${roomConflict.startTime} to ${roomConflict.endTime} for ${roomConflict.courseId.code}. Please choose a different room or time.`
       });
+    }
+
+    // Determine initial status based on current time vs session start time
+    const now = new Date();
+    const sessionDate = new Date(date);
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    
+    const sessionStartDateTime = new Date(sessionDate);
+    sessionStartDateTime.setHours(startHour, startMinute, 0, 0);
+    
+    let sessionEndDateTime = new Date(sessionDate);
+    sessionEndDateTime.setHours(endHour, endMinute, 0, 0);
+    
+    // Handle midnight rollover (e.g., session from 23:00 to 01:00)
+    if (sessionEndDateTime < sessionStartDateTime) {
+      sessionEndDateTime.setDate(sessionEndDateTime.getDate() + 1);
+    }
+    
+    // Determine status:
+    // - If current time >= start time and < end time: 'live'
+    // - If current time < start time: 'scheduled'
+    // - If current time >= end time: 'closed' (shouldn't happen in creation, but handle it)
+    let initialStatus = 'scheduled';
+    
+    if (now >= sessionStartDateTime && now < sessionEndDateTime) {
+      initialStatus = 'live';
+      console.log(`Session start time has passed. Setting status to 'live'.`);
+    } else if (now >= sessionEndDateTime) {
+      initialStatus = 'closed';
+      console.log(`Session end time has passed. Setting status to 'closed'.`);
+    } else {
+      console.log(`Session is in the future. Setting status to 'scheduled'.`);
     }
 
     const session = await ClassSession.create({
@@ -187,7 +222,7 @@ export const createSession = async (req, res, next) => {
       department: course.department,
       year: year,
       semester: semester,
-      status: 'scheduled'
+      status: initialStatus
     });
 
     await session.populate('courseId');
@@ -269,6 +304,43 @@ export const deleteSession = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Session not found' });
     }
     res.json({ success: true, message: 'Session deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Query sessions by filters (date, room, status, etc.)
+export const querySessions = async (req, res, next) => {
+  try {
+    const { date, room, status } = req.query;
+    
+    const query = {};
+    
+    if (date) {
+      query.date = date;
+    }
+    
+    if (room) {
+      query.room = room;
+    }
+    
+    if (status) {
+      // Handle both single status and array of statuses
+      if (Array.isArray(status)) {
+        query.status = { $in: status };
+      } else {
+        query.status = status;
+      }
+    }
+    
+    const sessions = await ClassSession.find(query)
+      .populate('courseId', 'code name department')
+      .sort({ date: -1, startTime: -1 });
+
+    res.json({
+      success: true,
+      data: sessions
+    });
   } catch (error) {
     next(error);
   }
