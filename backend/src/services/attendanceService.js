@@ -127,14 +127,19 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
     actualScanDate = scannedAt;
   }
 
-  // Use server local date (not UTC) to match how sessions are stored (YYYY-MM-DD)
-  const localIso = new Date(actualScanDate.getTime() - actualScanDate.getTimezoneOffset() * 60000).toISOString();
-  const scannedDate = localIso.split('T')[0];
-  const scannedTime = formatTime(actualScanDate);
+  // FORCE TIMESTAMP TO SRI LANKA TIME (IST = UTC+5:30)
+  // This ensures consistent behavior regardless of server location (Localhost vs Vercel)
+  // We shift the time by +5.5 hours so that the UTC components of the new date object
+  // match the local time in Sri Lanka.
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(actualScanDate.getTime() + IST_OFFSET_MS);
+  const istIso = istDate.toISOString(); // Numbers now represent IST time
 
-  console.log('📅 Scan timestamp analysis:');
+  const scannedDate = istIso.split('T')[0];
+  const scannedTime = istIso.split('T')[1].substring(0, 5); // HH:MM
+
+  console.log('📅 Scan timestamp analysis (Adjusted to IST):');
   console.log('   Raw timestamp:', timestamp);
-  console.log('   Is millis():', isMillisTimestamp);
   console.log('   Actual scan date:', scannedDate);
   console.log('   Actual scan time:', scannedTime);
 
@@ -158,28 +163,19 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
   console.log(`Scan Date: ${scannedDate}`);
   console.log(`Scan Time: ${scannedTime}`);
 
-  // Step 1: Find active sessions for the scanned date, matching student's year and semester
-  // CRITICAL: This ensures only courses for the student's batch (year + semester) are considered
-  // Students from other batches will be automatically rejected here
-  // Check yesterday, today, and tomorrow to handle timezone differences
-  // (e.g., when local time is Dec 12 but UTC is still Dec 11)
+  // Step 1: Find active sessions for the scanned date
+  // Check yesterday, today, and tomorrow (in IST context)
   const datesToCheck = [scannedDate];
 
-  // ALWAYS check yesterday and tomorrow to handle timezone differences
-  // This is critical because sessions are created with local dates but server might be in different timezone
-  const yesterday = new Date(actualScanDate);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const localYesterday = new Date(yesterday.getTime() - yesterday.getTimezoneOffset() * 60000);
-  const yesterdayStr = localYesterday.toISOString().split('T')[0];
+  const istYesterday = new Date(istDate.getTime() - 24 * 60 * 60 * 1000);
+  const istTomorrow = new Date(istDate.getTime() + 24 * 60 * 60 * 1000);
 
-  const tomorrow = new Date(actualScanDate);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const localTomorrow = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000);
-  const tomorrowStr = localTomorrow.toISOString().split('T')[0];
+  datesToCheck.push(
+    istYesterday.toISOString().split('T')[0],
+    istTomorrow.toISOString().split('T')[0]
+  );
 
-  datesToCheck.push(yesterdayStr, tomorrowStr);
   console.log('🔍 Checking dates for sessions:', datesToCheck);
-
 
   let session = null;
 
