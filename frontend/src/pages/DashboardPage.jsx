@@ -20,7 +20,7 @@ const UniversityStats = () => {
       setLoading(true);
       // Get today's date
       const today = new Date().toISOString().slice(0, 10);
-      
+
       // Fetch various statistics
       const [studentsRes, batchesRes, sessionsRes] = await Promise.all([
         apiClient.get('/api/students?limit=1'),
@@ -30,11 +30,11 @@ const UniversityStats = () => {
 
       // Count total students
       const totalStudents = studentsRes.data?.total || 0;
-      
+
       // Count batches
       const batches = Array.isArray(batchesRes) ? batchesRes : (batchesRes?.data || []);
       const totalBatches = batches.length;
-      
+
       // Get unique departments
       const departments = [...new Set(batches.map(b => b.department))];
       const totalDepartments = departments.length;
@@ -158,7 +158,7 @@ const UniversityStats = () => {
               Waiting for Sessions
             </h4>
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              When a session goes live, it will appear here with real-time attendance tracking. 
+              When a session goes live, it will appear here with real-time attendance tracking.
               Students can scan their IDs to mark attendance, and you'll see the statistics update instantly.
             </p>
           </div>
@@ -183,18 +183,18 @@ export const DashboardPage = () => {
     // Trigger refresh whenever lastScan changes (even if it's the same object)
     if (lastScan) {
       const scanTime = lastScan.timestamp || Date.now();
-      console.log('🔄 Dashboard: Scan detected, refreshing...', { 
+      console.log('🔄 Dashboard: Scan detected, refreshing...', {
         type: lastScan.type,
         student: lastScan.student?.name,
         registrationNo: lastScan.student?.registrationNo,
         session: lastScan.session?.courseCode,
         scanTime: new Date(scanTime).toLocaleTimeString()
       });
-      
+
       // Force refresh by updating timestamp
       setLastUpdateTime(Date.now());
       loadCurrentSessions();
-      
+
       // If a session modal is open, update it with fresh data
       if (selectedSession) {
         setTimeout(() => {
@@ -231,11 +231,11 @@ export const DashboardPage = () => {
       setLoadingSessions(true);
       const res = await apiClient.get('/api/analytics/current-sessions');
       console.log('📊 API Response:', res.data);
-      
+
       // API returns { success: true, data: [...] }
       const sessions = res.data?.data || res.data || [];
       console.log(`✅ Loaded ${sessions.length} session(s)`);
-      
+
       if (sessions.length > 0) {
         console.log('Session details:', sessions.map(s => ({
           course: s.courseCode,
@@ -245,7 +245,7 @@ export const DashboardPage = () => {
           notAttending: s.notAttending
         })));
       }
-      
+
       setCurrentSessions(sessions);
     } catch (e) {
       console.error('❌ Error loading current sessions:', e);
@@ -294,7 +294,6 @@ export const DashboardPage = () => {
         </div>
       </div>
 
-      {/* Current Sessions Section */}
       <div className="bg-white dark:bg-slate-900/50 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200 dark:border-slate-600/50 p-4 sm:p-6">
         {loadingSessions ? (
           <div className="flex items-center justify-center py-12 sm:py-20">
@@ -306,14 +305,51 @@ export const DashboardPage = () => {
         ) : currentSessions.length === 0 ? (
           <UniversityStats />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {currentSessions.map((session) => (
-              <SessionContainer
-                key={session.id}
-                session={session}
-                onClick={setSelectedSession}
-              />
-            ))}
+          <div className="space-y-8">
+            {/* Live Sessions */}
+            {currentSessions.some(s => s.status === 'live') && (
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                  Live Now
+                </h4>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  {currentSessions
+                    .filter(s => s.status === 'live')
+                    .map((session) => (
+                      <SessionContainer
+                        key={session.id}
+                        session={session}
+                        onClick={setSelectedSession}
+                      />
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Scheduled Sessions */}
+            {currentSessions.some(s => s.status === 'scheduled') && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-amber-500" />
+                    Scheduled for Today
+                  </h4>
+                  <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700"></div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  {currentSessions
+                    .filter(s => s.status === 'scheduled')
+                    .map((session) => (
+                      <SessionContainer
+                        key={session.id}
+                        session={session}
+                        onClick={setSelectedSession}
+                      />
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

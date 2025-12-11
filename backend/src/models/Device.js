@@ -22,6 +22,10 @@ const deviceSchema = new mongoose.Schema({
   },
   lastSeenAt: {
     type: Date
+  },
+  activeSessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ClassSession'
   }
 }, {
   timestamps: true

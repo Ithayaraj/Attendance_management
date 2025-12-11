@@ -37,11 +37,16 @@ export const SessionContainer = ({ session, onClick }) => {
             </div>
           </div>
 
-          {/* Live Badge - Only show if status is 'live' */}
-          {session.status === 'live' && (
+          {/* Status Badge */}
+          {session.status === 'live' ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500 rounded-full shadow-md">
               <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
               <span className="text-xs font-bold text-white">LIVE</span>
+            </div>
+          ) : session.status === 'scheduled' && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 rounded-full shadow-md">
+              <Clock className="w-3 h-3 text-white" />
+              <span className="text-xs font-bold text-white">SCHEDULED</span>
             </div>
           )}
         </div>
