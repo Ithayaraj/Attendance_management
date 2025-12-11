@@ -106,3 +106,23 @@ export const rotateDeviceKey = async (req, res, next) => {
     next(error);
   }
 };
+
+export const deleteDevice = async (req, res, next) => {
+  try {
+    const device = await Device.findByIdAndDelete(req.params.id);
+
+    if (!device) {
+      return res.status(404).json({
+        success: false,
+        message: 'Device not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Device deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};

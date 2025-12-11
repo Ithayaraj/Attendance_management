@@ -25,6 +25,7 @@ export const SessionsPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
   const [batchActiveSessions, setBatchActiveSessions] = useState({});
+  const [activeGlobalSessions, setActiveGlobalSessions] = useState([]);
 
   const BATCHES_CACHE_KEY = 'sessions_batches_cache';
   const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -77,27 +78,28 @@ export const SessionsPage = () => {
     try {
       // Get today's date
       const today = new Date().toISOString().slice(0, 10);
-      
+
       // Fetch all sessions for today
       const res = await apiClient.get('/api/analytics/current-sessions');
       const currentSessions = res.data?.data || res.data || [];
-      
+
       // Count active sessions per batch (department + year + semester)
       const activeSessionsMap = {};
-      
+
       batchesList.forEach(batch => {
         const batchKey = `${batch.department}-${batch.currentYear}-${batch.currentSemester}`;
-        const count = currentSessions.filter(s => 
+        const count = currentSessions.filter(s =>
           s.department === batch.department &&
           s.year === batch.currentYear &&
           s.semester === batch.currentSemester &&
           s.status === 'live'
         ).length;
-        
+
         activeSessionsMap[batchKey] = count;
       });
-      
+
       setBatchActiveSessions(activeSessionsMap);
+      setActiveGlobalSessions(currentSessions);
     } catch (error) {
       console.error('Error loading batch active sessions:', error);
       setBatchActiveSessions({});
@@ -107,23 +109,23 @@ export const SessionsPage = () => {
   // Filter courses by selected batch (department, year, semester)
   const filteredCourses = useMemo(() => {
     if (!selectedBatch) return [];
-    
+
     let filtered = courses.filter(c => c.department === selectedBatch.department);
-    
+
     // Filter by year and semester from course code
     filtered = filtered.filter(c => {
       const yearInfo = getYearSemesterFromCode(c.code);
-      return yearInfo?.year === selectedBatch.currentYear && 
-             yearInfo?.semester === selectedBatch.currentSemester;
+      return yearInfo?.year === selectedBatch.currentYear &&
+        yearInfo?.semester === selectedBatch.currentSemester;
     });
-    
+
     return filtered;
   }, [courses, selectedBatch]);
 
   // Check if there are any active (live or scheduled) sessions for the selected batch
   const activeSessions = useMemo(() => {
     if (!selectedBatch) return [];
-    return sessions.filter(s => 
+    return sessions.filter(s =>
       s.status === 'live' || s.status === 'scheduled'
     );
   }, [sessions, selectedBatch]);
@@ -176,7 +178,7 @@ export const SessionsPage = () => {
       const list = res.data || [];
       setCourses(list);
       coursesLoadedRef.current = true;
-      
+
       // Cache courses
       sessionStorage.setItem('sessions_courses', JSON.stringify({
         data: list,
@@ -200,30 +202,30 @@ export const SessionsPage = () => {
   // Check if a session has started (current time >= startTime on session date)
   const isSessionStarted = (session) => {
     if (!session.date || !session.startTime) return false;
-    
+
     const now = new Date();
     const sessionStartDate = getSessionDateTime(session.date, session.startTime);
     if (!sessionStartDate) return false;
-    
+
     return now >= sessionStartDate;
   };
 
   // Check if a session has ended (current time > endTime on session date, accounting for midnight rollover)
   const isSessionEnded = (session) => {
     if (!session.date || !session.startTime || !session.endTime) return false;
-    
+
     const now = new Date();
     const sessionStartDate = getSessionDateTime(session.date, session.startTime);
     let sessionEndDate = getSessionDateTime(session.date, session.endTime);
-    
+
     if (!sessionStartDate || !sessionEndDate) return false;
-    
+
     // If end time is earlier than start time (e.g., 23:15 -> 00:15), session spans midnight
     // So end time is on the next day
     if (sessionEndDate < sessionStartDate) {
       sessionEndDate.setDate(sessionEndDate.getDate() + 1);
     }
-    
+
     return now > sessionEndDate;
   };
 
@@ -238,7 +240,7 @@ export const SessionsPage = () => {
       const res = await apiClient.get(`/api/courses/${courseId}/sessions`);
       const sessionsData = res.data || [];
       setSessions(sessionsData);
-      
+
       // Cache sessions for this course
       sessionStorage.setItem(`sessions_${courseId}`, JSON.stringify({
         data: sessionsData,
@@ -281,7 +283,7 @@ export const SessionsPage = () => {
           }
         })
       );
-      
+
       // Flatten and sort by date (newest first), then by start time
       const flatSessions = allSessions.flat().sort((a, b) => {
         if (a.date !== b.date) {
@@ -289,7 +291,7 @@ export const SessionsPage = () => {
         }
         return b.startTime.localeCompare(a.startTime);
       });
-      
+
       setSessions(flatSessions);
     } catch (e) {
       console.error('Failed to load sessions:', e);
@@ -302,16 +304,16 @@ export const SessionsPage = () => {
   // Automatically update session statuses (scheduled -> live -> closed)
   const checkAndUpdateSessionStatuses = useCallback(async (sessionsList) => {
     if (!selectedCourseId) return;
-    
+
     const updates = [];
-    
+
     // Check for sessions that should be closed (ended)
-    const expiredSessions = sessionsList.filter(s => 
+    const expiredSessions = sessionsList.filter(s =>
       (s.status === 'live' || s.status === 'scheduled') && isSessionEnded(s)
     );
 
     // Check for sessions that should be live (started but not ended)
-    const sessionsToLive = sessionsList.filter(s => 
+    const sessionsToLive = sessionsList.filter(s =>
       s.status === 'scheduled' && shouldBeLive(s)
     );
 
@@ -337,7 +339,7 @@ export const SessionsPage = () => {
 
     if (updates.length > 0) {
       await Promise.all(updates);
-      
+
       // Reload sessions after updating statuses
       await loadSessions(selectedCourseId);
     }
@@ -352,11 +354,14 @@ export const SessionsPage = () => {
         try {
           const { data, timestamp } = JSON.parse(cached);
           const age = Date.now() - timestamp;
-          
+
           if (age < BATCHES_CACHE_DURATION) {
             setBatches(data || []);
             setLoadingBatches(false);
-            
+
+            // Always fetch active sessions status to ensure indicators are correct
+            loadBatchActiveSessions(data || []);
+
             // Refresh in background if data is older than 1 minute
             if (age > 60 * 1000) {
               loadFresh();
@@ -377,10 +382,10 @@ export const SessionsPage = () => {
         const response = await apiClient.get('/api/batches');
         const batchesData = Array.isArray(response) ? response : (response?.data || []);
         setBatches(batchesData);
-        
+
         // Load active sessions count for each batch
         await loadBatchActiveSessions(batchesData);
-        
+
         // Cache the data
         sessionStorage.setItem(BATCHES_CACHE_KEY, JSON.stringify({
           data: batchesData,
@@ -434,16 +439,16 @@ export const SessionsPage = () => {
     // Check cache for courses
     const cacheKey = 'sessions_courses';
     const cached = sessionStorage.getItem(cacheKey);
-    
+
     if (cached) {
       try {
         const { data, timestamp } = JSON.parse(cached);
         const age = Date.now() - timestamp;
-        
+
         if (age < CACHE_DURATION) {
           setCourses(data);
           coursesLoadedRef.current = true;
-          
+
           // Refresh in background if older than 1 minute
           if (age > 60 * 1000) {
             loadCourses();
@@ -454,7 +459,7 @@ export const SessionsPage = () => {
         console.error('Cache error:', e);
       }
     }
-    
+
     if (!coursesLoadedRef.current) {
       loadCourses();
     }
@@ -476,18 +481,18 @@ export const SessionsPage = () => {
         // Check cache for sessions
         const cacheKey = `sessions_${selectedCourseId}`;
         const cached = sessionStorage.getItem(cacheKey);
-        
+
         if (cached) {
           try {
             const { data, timestamp } = JSON.parse(cached);
             const age = Date.now() - timestamp;
-            
+
             if (age < CACHE_DURATION) {
               setSessions(data);
-              
+
               // Check and update session statuses even from cache
               checkAndUpdateSessionStatuses(data);
-              
+
               // Refresh in background if older than 30 seconds
               if (age > 30 * 1000) {
                 loadSessions(selectedCourseId);
@@ -498,7 +503,7 @@ export const SessionsPage = () => {
             console.error('Cache error:', e);
           }
         }
-        
+
         loadSessions(selectedCourseId).then(() => {
           // After loading, check and update session statuses
           if (selectedCourseId) {
@@ -540,17 +545,17 @@ export const SessionsPage = () => {
           status: ['live', 'scheduled'] // Only check active sessions
         }
       });
-      
+
       const allSessions = response.data || [];
-      
+
       // Filter for conflicts within the same department only
       const conflictingSessions = allSessions.filter(s => {
         // Skip closed sessions
         if (s.status === 'closed') return false;
-        
+
         // Must be same date and room (already filtered by API, but double-check)
         if (s.date !== date || s.room !== room) return false;
-        
+
         // Get the department from the session's course
         // The courseId might be populated or just an ID
         let sessionDept = null;
@@ -563,33 +568,33 @@ export const SessionsPage = () => {
             sessionDept = course?.department;
           }
         }
-        
+
         // Only check conflicts within the same department
         if (!sessionDept || sessionDept !== department) return false;
-        
+
         // Check time overlap
         const newStart = getSessionDateTime(date, startTime);
         const newEnd = getSessionDateTime(date, endTime);
         const existingStart = getSessionDateTime(s.date, s.startTime);
         let existingEnd = getSessionDateTime(s.date, s.endTime);
-        
+
         if (!newStart || !newEnd || !existingStart || !existingEnd) return false;
-        
+
         // Handle midnight rollover for existing session
         if (existingEnd < existingStart) {
           existingEnd.setDate(existingEnd.getDate() + 1);
         }
-        
+
         // Handle midnight rollover for new session
         let adjustedNewEnd = new Date(newEnd);
         if (adjustedNewEnd < newStart) {
           adjustedNewEnd.setDate(adjustedNewEnd.getDate() + 1);
         }
-        
+
         // Check if times overlap: (newStart < existingEnd) && (newEnd > existingStart)
         return (newStart < existingEnd) && (adjustedNewEnd > existingStart);
       });
-      
+
       return conflictingSessions;
     } catch (error) {
       console.error('Error checking room conflicts:', error);
@@ -597,26 +602,26 @@ export const SessionsPage = () => {
       return sessions.filter(s => {
         if (s.status === 'closed') return false;
         if (s.date !== date || s.room !== room) return false;
-        
+
         const sessionDept = s.courseId?.department;
         if (!sessionDept || sessionDept !== department) return false;
-        
+
         const newStart = getSessionDateTime(date, startTime);
         const newEnd = getSessionDateTime(date, endTime);
         const existingStart = getSessionDateTime(s.date, s.startTime);
         let existingEnd = getSessionDateTime(s.date, s.endTime);
-        
+
         if (!newStart || !newEnd || !existingStart || !existingEnd) return false;
-        
+
         if (existingEnd < existingStart) {
           existingEnd.setDate(existingEnd.getDate() + 1);
         }
-        
+
         let adjustedNewEnd = new Date(newEnd);
         if (adjustedNewEnd < newStart) {
           adjustedNewEnd.setDate(adjustedNewEnd.getDate() + 1);
         }
-        
+
         return (newStart < existingEnd) && (adjustedNewEnd > existingStart);
       });
     }
@@ -628,30 +633,30 @@ export const SessionsPage = () => {
       showWarning('Please select a course first', 'Course Required');
       return;
     }
-    
+
     // Get the faculty/department of the selected course
     const selectedCourse = courses.find(c => c._id === selectedCourseId);
     if (!selectedCourse) {
       showError('Selected course not found', 'Error');
       return;
     }
-    
+
     setCreating(true);
-    
+
     try {
       // Check for room conflicts within the same department
       const conflicts = await checkRoomConflict(
-        form.date, 
-        form.startTime, 
-        form.endTime, 
-        form.room, 
+        form.date,
+        form.startTime,
+        form.endTime,
+        form.room,
         selectedCourse.department
       );
-      
+
       if (conflicts.length > 0) {
         const conflictDetails = conflicts.map(s => {
-          const courseCode = typeof s.courseId === 'object' ? s.courseId?.code : 
-                            courses.find(c => c._id === s.courseId)?.code;
+          const courseCode = typeof s.courseId === 'object' ? s.courseId?.code :
+            courses.find(c => c._id === s.courseId)?.code;
           return `${courseCode || 'N/A'} (${s.startTime}-${s.endTime})`;
         }).join(', ');
         showError(
@@ -660,7 +665,7 @@ export const SessionsPage = () => {
         );
         return;
       }
-      
+
       const payload = {
         date: form.date,
         startTime: form.startTime,
@@ -704,30 +709,30 @@ export const SessionsPage = () => {
 
   const saveEdit = async (e) => {
     e.preventDefault();
-    
+
     // Get the faculty/department of the session being edited
     const sessionCourse = courses.find(c => c._id === editing.courseId?._id);
     if (!sessionCourse) {
       showError('Course not found for this session', 'Error');
       return;
     }
-    
+
     try {
       // Check for room conflicts (excluding the current session being edited)
       const allConflicts = await checkRoomConflict(
-        form.date, 
-        form.startTime, 
-        form.endTime, 
-        form.room, 
+        form.date,
+        form.startTime,
+        form.endTime,
+        form.room,
         sessionCourse.department
       );
-      
+
       const conflicts = allConflicts.filter(s => s._id !== editing._id); // Exclude current session
-      
+
       if (conflicts.length > 0) {
         const conflictDetails = conflicts.map(s => {
-          const courseCode = typeof s.courseId === 'object' ? s.courseId?.code : 
-                            courses.find(c => c._id === s.courseId)?.code;
+          const courseCode = typeof s.courseId === 'object' ? s.courseId?.code :
+            courses.find(c => c._id === s.courseId)?.code;
           return `${courseCode || 'N/A'} (${s.startTime}-${s.endTime})`;
         }).join(', ');
         showError(
@@ -736,7 +741,7 @@ export const SessionsPage = () => {
         );
         return;
       }
-      
+
       await apiClient.put(`/api/sessions/${editing._id}`, {
         date: form.date,
         startTime: form.startTime,
@@ -767,6 +772,29 @@ export const SessionsPage = () => {
     }
   };
 
+  // specific course active status helper
+  const activeCourseIds = useMemo(() => {
+    const ids = new Set();
+
+    // checks activeGlobalSessions
+    activeGlobalSessions.forEach(s => {
+      if (s.status === 'live') {
+        const cid = s.courseId?._id || s.courseId;
+        if (cid) ids.add(String(cid));
+      }
+    });
+
+    // checks current loaded sessions
+    sessions.forEach(s => {
+      if (s.status === 'live') {
+        const cid = s.courseId?._id || s.courseId;
+        if (cid) ids.add(String(cid));
+      }
+    });
+
+    return ids;
+  }, [activeGlobalSessions, sessions]);
+
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:gap-4">
@@ -774,7 +802,7 @@ export const SessionsPage = () => {
           <h3 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white">Sessions</h3>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Manage class sessions and go live</p>
         </div>
-        
+
         {/* Batch and Course Filter Section */}
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-end">
@@ -798,7 +826,7 @@ export const SessionsPage = () => {
                     const facultyShort = faculty ? faculty.replace('Faculty of ', '') : '';
                     const batchKey = `${b.department}-${b.currentYear}-${b.currentSemester}`;
                     const activeCount = batchActiveSessions[batchKey] || 0;
-                    const liveIndicator = activeCount > 0 ? `🟢 ${activeCount} | ` : '';
+                    const liveIndicator = activeCount > 0 ? `🟢 | ` : '';
                     const batchLabel = `${liveIndicator}${b.startYear} - ${facultyShort} - ${b.department} - Year ${b.currentYear}, Semester ${b.currentSemester}`;
                     return {
                       value: b._id,
@@ -819,10 +847,15 @@ export const SessionsPage = () => {
                 placeholder={selectedBatch ? 'All Courses' : 'Select batch first'}
                 options={[
                   { value: '', label: selectedBatch ? 'All Courses' : 'Select batch first' },
-                  ...filteredCourses.map(c => ({
-                    value: c._id,
-                    label: `${c.code} - ${c.name}`
-                  }))
+                  ...filteredCourses.map(c => {
+                    const isLive = activeCourseIds.has(String(c._id));
+
+                    return {
+                      value: c._id,
+                      label: `${isLive ? '🟢 ' : ''}${c.code} - ${c.name}`,
+                      badge: isLive ? 'Live' : null
+                    };
+                  })
                 ]}
               />
             </div>
@@ -841,54 +874,27 @@ export const SessionsPage = () => {
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-            <button 
-              onClick={() => selectedCourseId ? loadSessions(selectedCourseId) : loadAllCourseSessions()} 
-              disabled={!selectedBatch} 
+            <button
+              onClick={() => selectedCourseId ? loadSessions(selectedCourseId) : loadAllCourseSessions()}
+              disabled={!selectedBatch}
               className="w-full sm:w-auto px-3 sm:px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
-              <RefreshCw className="w-4 h-4" /> 
+              <RefreshCw className="w-4 h-4" />
               <span>Refresh</span>
             </button>
-            <button 
-              onClick={()=>setShowCreate(true)} 
-              disabled={!selectedCourseId} 
+            <button
+              onClick={() => setShowCreate(true)}
+              disabled={!selectedCourseId}
               className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
             >
-              <Plus className="w-4 h-4" /> 
+              <Plus className="w-4 h-4" />
               <span>New Session</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Warning for active sessions */}
-      {selectedBatch && hasActiveSessions && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 sm:p-4 mb-3 sm:mb-4">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">ℹ️</span>
-            <div className="flex-1">
-              <h4 className="font-semibold text-amber-800 dark:text-amber-200 mb-1">
-                Active Session{activeSessions.length > 1 ? 's' : ''} for This Batch
-              </h4>
-              <p className="text-sm text-amber-700 dark:text-amber-300 mb-2">
-                This batch has {activeSessions.length} active session{activeSessions.length > 1 ? 's' : ''}. You must close {activeSessions.length > 1 ? 'all active sessions' : 'the active session'} before creating a new one.
-              </p>
-              <div className="space-y-1">
-                {activeSessions.map(s => (
-                  <div key={s._id} className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.status === 'live' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
-                      {s.status}
-                    </span>
-                    <span className="font-medium">{s.courseId?.code || 'N/A'}</span>
-                    <span>•</span>
-                    <span>{s.date} {s.startTime}-{s.endTime}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Warning for sessions without year/semester */}
       {selectedBatch && sessions.length > 0 && sessions.some(s => !s.year || !s.semester) && (
@@ -926,13 +932,15 @@ export const SessionsPage = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Room</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Batch</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                  {selectedCourseId && (
+                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center">
+                    <td colSpan={selectedCourseId ? 7 : 6} className="px-6 py-12 text-center">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <LoadingSpinner size="lg" className="text-cyan-600" />
                         <span className="text-slate-500 dark:text-slate-400">Loading sessions...</span>
@@ -940,7 +948,7 @@ export const SessionsPage = () => {
                     </td>
                   </tr>
                 ) : sessions.length === 0 ? (
-                  <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
+                  <tr><td colSpan={selectedCourseId ? 7 : 6} className="px-6 py-12 text-center text-slate-500">No sessions</td></tr>
                 ) : (
                   paginatedSessions.map(s => (
                     <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
@@ -966,14 +974,16 @@ export const SessionsPage = () => {
                           {s.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
-                          <button onClick={() => setStatus(s._id, 'live')} className="p-2 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg" title="Set Live"><PlayCircle className="w-4 h-4" /></button>
-                          <button onClick={() => setStatus(s._id, 'closed')} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Close"><XCircle className="w-4 h-4" /></button>
-                          <button onClick={() => openEdit(s)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
-                          <button onClick={() => remove(s)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
-                        </div>
-                      </td>
+                      {selectedCourseId && (
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => setStatus(s._id, 'live')} className="p-2 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg" title="Set Live"><PlayCircle className="w-4 h-4" /></button>
+                            <button onClick={() => setStatus(s._id, 'closed')} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Close"><XCircle className="w-4 h-4" /></button>
+                            <button onClick={() => openEdit(s)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
+                            <button onClick={() => remove(s)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -1001,11 +1011,10 @@ export const SessionsPage = () => {
                   <button
                     key={page}
                     onClick={() => setCurrentPage(page)}
-                    className={`px-3 py-1.5 text-sm rounded-lg ${
-                      currentPage === page
-                        ? 'bg-cyan-600 text-white'
-                        : 'border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                    }`}
+                    className={`px-3 py-1.5 text-sm rounded-lg ${currentPage === page
+                      ? 'bg-cyan-600 text-white'
+                      : 'border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
                   >
                     {page}
                   </button>
@@ -1028,46 +1037,46 @@ export const SessionsPage = () => {
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-xl w-full overflow-hidden">
             <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">New Session</h3>
-              <button onClick={()=>setShowCreate(false)} className="text-slate-500 hover:text-slate-700">✕</button>
+              <button onClick={() => setShowCreate(false)} className="text-slate-500 hover:text-slate-700">✕</button>
             </div>
             <form onSubmit={createSession} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
-                  <input type="date" required value={form.date} onChange={(e)=>setForm({...form, date:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
+                  <input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Room</label>
-                  <input type="text" required value={form.room} onChange={(e)=>setForm({...form, room:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
+                  <input type="text" required value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
-                  <input 
-                    type="time" 
-                    required 
-                    value={form.startTime} 
+                  <input
+                    type="time"
+                    required
+                    value={form.startTime}
                     onChange={(e) => {
                       const value = e.target.value;
                       // Calculate end time as 1 hour after start time
                       const end = value ? addMinutesLocal(value, 60) : '';
-                      setForm({...form, startTime: value, endTime: end});
+                      setForm({ ...form, startTime: value, endTime: end });
                     }}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" 
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm"
                   />
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
-                  <input type="time" required value={form.endTime} onChange={(e)=>setForm({...form, endTime:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
+                  <input type="time" required value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
               <label className="flex items-center gap-2">
-                <input type="checkbox" checked={form.goLive} onChange={(e)=>setForm({...form, goLive:e.target.checked})} />
+                <input type="checkbox" checked={form.goLive} onChange={(e) => setForm({ ...form, goLive: e.target.checked })} />
                 <span className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">Set status to Live after create</span>
               </label>
               <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
-                <button type="button" onClick={()=>setShowCreate(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm order-2 sm:order-1">Cancel</button>
+                <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm order-2 sm:order-1">Cancel</button>
                 <button type="submit" disabled={creating} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all text-sm order-1 sm:order-2">{creating ? 'Creating...' : 'Create'}</button>
               </div>
             </form>
@@ -1080,37 +1089,37 @@ export const SessionsPage = () => {
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-xl w-full overflow-hidden">
             <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Edit Session</h3>
-              <button onClick={()=>setShowEdit(false)} className="text-slate-500 hover:text-slate-700">✕</button>
+              <button onClick={() => setShowEdit(false)} className="text-slate-500 hover:text-slate-700">✕</button>
             </div>
             <form onSubmit={saveEdit} className="p-4 sm:p-5 space-y-3 sm:space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
-                  <input type="date" required value={form.date} onChange={(e)=>setForm({...form, date:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
+                  <input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Room</label>
-                  <input type="text" required value={form.room} onChange={(e)=>setForm({...form, room:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
+                  <input type="text" required value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Start Time</label>
-                  <input 
-                    type="time" 
-                    required 
-                    value={form.startTime} 
-                    onChange={(e) => setForm({...form, startTime: e.target.value})} 
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" 
+                  <input
+                    type="time"
+                    required
+                    value={form.startTime}
+                    onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm"
                   />
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">End Time</label>
-                  <input type="time" required value={form.endTime} onChange={(e)=>setForm({...form, endTime:e.target.value})} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
+                  <input type="time" required value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white text-sm" />
                 </div>
               </div>
               <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-2">
-                <button type="button" onClick={()=>setShowEdit(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm order-2 sm:order-1">Cancel</button>
+                <button type="button" onClick={() => setShowEdit(false)} className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm order-2 sm:order-1">Cancel</button>
                 <button type="submit" disabled={creating} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all text-sm order-1 sm:order-2">Save</button>
               </div>
             </form>

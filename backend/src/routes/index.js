@@ -99,7 +99,8 @@ router.delete('/batches/:id', requireAuth, requireRole(['admin']), batchesContro
 
 router.get('/devices', requireAuth, requireRole(['admin']), devicesController.getDevices);
 router.post('/devices', requireAuth, requireRole(['admin']), devicesController.createDevice);
-router.patch('/devices/:id', requireAuth, requireRole(['admin']), devicesController.updateDevice);
+router.put('/devices/:id', requireAuth, requireRole(['admin']), devicesController.updateDevice);
 router.post('/devices/:id/rotate-key', requireAuth, requireRole(['admin']), devicesController.rotateDeviceKey);
+router.delete('/devices/:id', requireAuth, requireRole(['admin']), devicesController.deleteDevice);
 
 export default router;

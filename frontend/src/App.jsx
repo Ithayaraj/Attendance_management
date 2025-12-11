@@ -314,17 +314,7 @@ function AppContent() {
         onRemove={removeNotification}
       />
 
-      {/* WebSocket Connection Status Indicator */}
-      {user && (
-        <div
-          className={`fixed bottom-4 right-4 z-[9998] px-3 py-2 rounded-lg shadow-lg text-xs font-medium ${connected
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
-              : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700'
-            }`}
-        >
-          {connected ? '🟢 Connected' : '🔴 Disconnected'}
-        </div>
-      )}
+
 
       <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-x-hidden">
         {/* Mobile overlay */}
@@ -358,7 +348,7 @@ function AppContent() {
             onMenuClick={() => setSidebarOpen(!sidebarOpen)}
           />
 
-          <main className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6 w-full max-w-full">
+          <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin p-4 sm:p-6 w-full max-w-full">
             {selectedStudent ? (
               <StudentDetailPage
                 student={selectedStudent}

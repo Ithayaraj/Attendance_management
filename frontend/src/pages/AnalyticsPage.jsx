@@ -303,7 +303,7 @@ export const AnalyticsPage = () => {
     const headerRowIndex = wsData.length;
     
     // Add table headers
-    const tableHeaders = ['Student', 'Registration No', ...courseTableData.months.map(month => 
+    const tableHeaders = ['Registration No', 'Student', ...courseTableData.months.map(month => 
       new Date(month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     ), 'Overall'];
     wsData.push(tableHeaders);
@@ -316,8 +316,8 @@ export const AnalyticsPage = () => {
       });
       
       wsData.push([
-        student.name,
         student.registrationNo,
+        student.name,
         ...monthlyData,
         parseFloat(student.overall.attendanceRate)
       ]);
@@ -535,13 +535,13 @@ export const AnalyticsPage = () => {
     const summaryHeaderRow = summaryData.length;
     
     // Create summary table headers
-    summaryData.push(['Student', 'Registration No', 'Overall Attendance']);
+    summaryData.push(['Registration No', 'Student', 'Overall Attendance']);
     
     // Add student data with overall attendance
     courseTableData.students.forEach(student => {
       summaryData.push([
-        student.name,
         student.registrationNo,
+        student.name,
         parseFloat(student.overall.attendanceRate)
       ]);
     });
@@ -993,10 +993,10 @@ export const AnalyticsPage = () => {
 
       const headerRowIndex = wsData.length;
 
-      // Create table headers: Student, Reg No, Course1, Course2, ..., Average
+      // Create table headers: Reg No, Student, Course1, Course2, ..., Average
       const tableHeaders = [
-        'Student',
         'Registration No',
+        'Student',
         ...courses.map(course => `${course.code}\n${course.name}`),
         'Average'
       ];
@@ -1004,7 +1004,7 @@ export const AnalyticsPage = () => {
 
       // Add student rows
       studentCourseData.forEach(student => {
-        const row = [student.name, student.registrationNo];
+        const row = [student.registrationNo, student.name];
         
         let totalPercentage = 0;
         let courseCount = 0;
@@ -1248,13 +1248,14 @@ export const AnalyticsPage = () => {
     : 0;
 
   return (
-    <div className="p-6 space-y-6">
-      {!selectedBatch && (
-        <div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Batch-wise Attendance Analytics</h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Overview of attendance across all batches</p>
-        </div>
-      )}
+    <div className="w-full max-w-full overflow-x-hidden">
+      <div className="p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
+        {!selectedBatch && (
+          <div>
+            <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Batch-wise Attendance Analytics</h3>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">Overview of attendance across all batches</p>
+          </div>
+        )}
 
       {!selectedBatch && (
         <>
@@ -1444,16 +1445,16 @@ export const AnalyticsPage = () => {
       {selectedBatch && (
         <div className="space-y-6">
           {/* Back Button and Header */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={closeModal}
-              className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              className="p-1.5 sm:p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex-shrink-0"
             >
-              <ChevronLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+              <ChevronLeft className="w-4 sm:w-5 h-4 sm:h-5 text-slate-700 dark:text-slate-300" />
             </button>
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{selectedBatch.batchName}</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 dark:text-white truncate">{selectedBatch.batchName}</h2>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5 sm:mt-1 truncate">
                 {selectedBatch.department} • Year {selectedBatch.currentYear} • Sem {selectedBatch.currentSemester}
               </p>
             </div>
@@ -1461,40 +1462,43 @@ export const AnalyticsPage = () => {
 
           <div>
               {/* View Mode Toggle and Export Button */}
-              <div className="flex gap-2 mb-4">
-                <div className="flex gap-2 flex-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+              <div className="flex gap-2 mb-3 sm:mb-4">
+                <div className="flex gap-1 sm:gap-2 flex-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                   <button
                     onClick={() => setViewMode('courses')}
-                    className={`flex-1 py-2.5 px-3 rounded-md font-medium transition-all text-sm ${
+                    className={`flex-1 py-2 sm:py-2.5 px-2 sm:px-3 rounded-md font-medium transition-all text-xs sm:text-sm ${
                       viewMode === 'courses'
                         ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
-                    <BookOpen className="w-4 h-4 inline-block mr-1" />
-                    Courses
+                    <BookOpen className="w-3.5 sm:w-4 h-3.5 sm:h-4 inline-block mr-0.5 sm:mr-1" />
+                    <span className="hidden sm:inline">Courses</span>
+                    <span className="sm:hidden">Crs</span>
                   </button>
                   <button
                     onClick={switchToStudentsView}
-                    className={`flex-1 py-2.5 px-3 rounded-md font-medium transition-all text-sm ${
+                    className={`flex-1 py-2 sm:py-2.5 px-2 sm:px-3 rounded-md font-medium transition-all text-xs sm:text-sm ${
                       viewMode === 'students'
                         ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
-                    <Users className="w-4 h-4 inline-block mr-1" />
-                    Students
+                    <Users className="w-3.5 sm:w-4 h-3.5 sm:h-4 inline-block mr-0.5 sm:mr-1" />
+                    <span className="hidden sm:inline">Students</span>
+                    <span className="sm:hidden">Std</span>
                   </button>
                   <button
                     onClick={switchToOverviewView}
-                    className={`flex-1 py-2.5 px-3 rounded-md font-medium transition-all text-sm ${
+                    className={`flex-1 py-2 sm:py-2.5 px-2 sm:px-3 rounded-md font-medium transition-all text-xs sm:text-sm ${
                       viewMode === 'overview'
                         ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
-                    <Table className="w-4 h-4 inline-block mr-1" />
-                    Overview
+                    <Table className="w-3.5 sm:w-4 h-3.5 sm:h-4 inline-block mr-0.5 sm:mr-1" />
+                    <span className="hidden sm:inline">Overview</span>
+                    <span className="sm:hidden">All</span>
                   </button>
                 </div>
               </div>
@@ -1618,39 +1622,42 @@ export const AnalyticsPage = () => {
                                       </div>
 
                                       {/* View Mode Toggle and Export Button */}
-                                      <div className="flex gap-2 mb-4">
+                                      <div className="flex flex-col sm:flex-row gap-2 mb-4">
                                         <div className="flex gap-2 flex-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                                           <button
                                             onClick={() => handleCourseViewModeChange('chart')}
-                                            className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-xs ${
+                                            className={`flex-1 py-2 px-2 sm:px-3 rounded-md font-medium transition-all text-xs ${
                                               courseViewMode === 'chart'
                                                 ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
                                                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                             }`}
                                           >
                                             <BarChart3 className="w-3.5 h-3.5 inline-block mr-1" />
-                                            Chart View
+                                            <span className="hidden xs:inline">Chart View</span>
+                                            <span className="xs:hidden">Chart</span>
                                           </button>
                                           <button
                                             onClick={() => handleCourseViewModeChange('table')}
-                                            className={`flex-1 py-2 px-3 rounded-md font-medium transition-all text-xs ${
+                                            className={`flex-1 py-2 px-2 sm:px-3 rounded-md font-medium transition-all text-xs ${
                                               courseViewMode === 'table'
                                                 ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
                                                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                             }`}
                                           >
                                             <Table className="w-3.5 h-3.5 inline-block mr-1" />
-                                            Table View
+                                            <span className="hidden xs:inline">Table View</span>
+                                            <span className="xs:hidden">Table</span>
                                           </button>
                                         </div>
                                         {courseViewMode === 'table' && courseTableData && (
                                           <button
                                             onClick={exportToCSV}
-                                            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all text-xs flex items-center gap-2 shadow-sm"
+                                            className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all text-xs flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm whitespace-nowrap"
                                             title="Export to Excel"
                                           >
                                             <Download className="w-3.5 h-3.5" />
-                                            Export Excel
+                                            <span className="hidden sm:inline">Export Excel</span>
+                                            <span className="sm:hidden">Export</span>
                                           </button>
                                         )}
                                       </div>
@@ -1746,7 +1753,7 @@ export const AnalyticsPage = () => {
                                         </>
                                       ) : (
                                         // Table View
-                                        <div className="overflow-x-auto">
+                                        <div className="w-full">
                                           {!courseTableData ? (
                                             <div className="flex items-center justify-center py-8">
                                               <LoadingSpinner size="lg" className="text-cyan-600" />
@@ -1757,98 +1764,100 @@ export const AnalyticsPage = () => {
                                               <p className="text-sm">No student data available</p>
                                             </div>
                                           ) : (
-                                            <div className="border-2 border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                                              <table className="w-full text-xs">
-                                                <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0">
-                                                  <tr>
-                                                    <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700">Student</th>
-                                                    <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700">Reg No</th>
-                                                    {courseTableData.months.map(month => (
-                                                      <th key={month} className="px-3 py-2 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 whitespace-nowrap">
-                                                        {new Date(month + '-01').toLocaleDateString('en-US', { month: 'long' })}
-                                                      </th>
+                                            <div className="border-2 border-slate-200 dark:border-slate-700 rounded-lg overflow-x-auto relative">
+                                              <table className="w-full text-xs min-w-max">
+                                                  <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0">
+                                                    <tr>
+                                                      <th className="px-2 sm:px-3 py-2 text-left font-bold text-slate-900 dark:text-white border-b-2 border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-100 dark:bg-slate-800 z-10 min-w-[80px] sm:min-w-[120px]">Reg No</th>
+                                                      <th className="px-2 sm:px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 min-w-[120px] sm:min-w-[200px]">Student</th>
+                                                      {courseTableData.months.map(month => (
+                                                        <th key={month} className="px-2 sm:px-3 py-2 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 whitespace-nowrap min-w-[70px] sm:min-w-[100px]">
+                                                          <span className="hidden sm:inline">{new Date(month + '-01').toLocaleDateString('en-US', { month: 'long' })}</span>
+                                                          <span className="sm:hidden text-[10px]">{new Date(month + '-01').toLocaleDateString('en-US', { month: 'short' })}</span>
+                                                        </th>
+                                                      ))}
+                                                      <th className="px-2 sm:px-3 py-2 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20 min-w-[70px] sm:min-w-[80px]">Overall</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {courseTableData.students.map((student, idx) => (
+                                                      <tr key={student.studentId} className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/50'} hover:bg-cyan-50 dark:hover:bg-cyan-900/10 transition-colors`}>
+                                                        <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-bold border-b border-slate-200 dark:border-slate-700 sticky left-0 bg-inherit z-20">{student.registrationNo}</td>
+                                                        <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-medium border-b border-slate-200 dark:border-slate-700">{student.name}</td>
+                                                        {courseTableData.months.map(month => {
+                                                          const monthData = student.monthlyStats.find(m => m.month === month);
+                                                          return (
+                                                            <td key={month} className="px-2 sm:px-3 py-1.5 sm:py-2 text-center border-b border-slate-200 dark:border-slate-700">
+                                                              {monthData ? (
+                                                                <span className={`font-semibold text-[10px] sm:text-xs ${
+                                                                  parseFloat(monthData.attendanceRate) >= 75 ? 'text-green-600 dark:text-green-400' :
+                                                                  parseFloat(monthData.attendanceRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                                                  'text-red-600 dark:text-red-400'
+                                                                }`}>
+                                                                  {monthData.attendanceRate}%
+                                                                </span>
+                                                              ) : (
+                                                                <span className="text-slate-400 text-[10px] sm:text-xs">-</span>
+                                                              )}
+                                                            </td>
+                                                          );
+                                                        })}
+                                                        <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-center border-b border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20">
+                                                          <span className={`font-bold text-[10px] sm:text-xs ${
+                                                            parseFloat(student.overall.attendanceRate) >= 75 ? 'text-green-600 dark:text-green-400' :
+                                                            parseFloat(student.overall.attendanceRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                                            'text-red-600 dark:text-red-400'
+                                                          }`}>
+                                                            {student.overall.attendanceRate}%
+                                                          </span>
+                                                        </td>
+                                                      </tr>
                                                     ))}
-                                                    <th className="px-3 py-2 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20">Overall</th>
-                                                  </tr>
-                                                </thead>
-                                                <tbody>
-                                                  {courseTableData.students.map((student, idx) => (
-                                                    <tr key={student.studentId} className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/50'} hover:bg-cyan-50 dark:hover:bg-cyan-900/10 transition-colors`}>
-                                                      <td className="px-3 py-2 text-slate-900 dark:text-white font-medium border-b border-slate-200 dark:border-slate-700">{student.name}</td>
-                                                      <td className="px-3 py-2 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">{student.registrationNo}</td>
+                                                    {/* Average Row */}
+                                                    <tr className="bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 font-bold">
+                                                      <td className="px-2 sm:px-3 py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-600 sticky left-0 bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 z-20 font-bold">
+                                                        Class Average
+                                                      </td>
+                                                      <td className="px-2 sm:px-3 py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-600 bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30"></td>
                                                       {courseTableData.months.map(month => {
-                                                        const monthData = student.monthlyStats.find(m => m.month === month);
+                                                        // Calculate average for this month
+                                                        let totalRate = 0;
+                                                        let count = 0;
+                                                        courseTableData.students.forEach(student => {
+                                                          const monthData = student.monthlyStats.find(m => m.month === month);
+                                                          if (monthData) {
+                                                            totalRate += parseFloat(monthData.attendanceRate);
+                                                            count++;
+                                                          }
+                                                        });
+                                                        const avgRate = count > 0 ? (totalRate / count).toFixed(1) : '-';
                                                         return (
-                                                          <td key={month} className="px-3 py-2 text-center border-b border-slate-200 dark:border-slate-700">
-                                                            {monthData ? (
-                                                              <span className={`font-semibold ${
-                                                                parseFloat(monthData.attendanceRate) >= 75 ? 'text-green-600 dark:text-green-400' :
-                                                                parseFloat(monthData.attendanceRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
-                                                                'text-red-600 dark:text-red-400'
-                                                              }`}>
-                                                                {monthData.attendanceRate}%
-                                                              </span>
-                                                            ) : (
-                                                              <span className="text-slate-400">-</span>
-                                                            )}
+                                                          <td key={month} className="px-2 sm:px-3 py-2 text-center border-t-2 border-slate-300 dark:border-slate-600">
+                                                            <span className={`font-bold text-[10px] sm:text-xs ${
+                                                              avgRate !== '-' && parseFloat(avgRate) >= 75 ? 'text-green-600 dark:text-green-400' :
+                                                              avgRate !== '-' && parseFloat(avgRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                                              avgRate !== '-' ? 'text-red-600 dark:text-red-400' : 'text-slate-400'
+                                                            }`}>
+                                                              {avgRate !== '-' ? `${avgRate}%` : '-'}
+                                                            </span>
                                                           </td>
                                                         );
                                                       })}
-                                                      <td className="px-3 py-2 text-center border-b border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20">
-                                                        <span className={`font-bold ${
-                                                          parseFloat(student.overall.attendanceRate) >= 75 ? 'text-green-600 dark:text-green-400' :
-                                                          parseFloat(student.overall.attendanceRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                                      <td className="px-2 sm:px-3 py-2 text-center border-t-2 border-slate-300 dark:border-slate-600 bg-cyan-100 dark:bg-cyan-900/40">
+                                                        <span className={`font-bold text-xs sm:text-sm ${
+                                                          parseFloat(courseTableData.averages.attendanceRate) >= 75 ? 'text-green-600 dark:text-green-400' :
+                                                          parseFloat(courseTableData.averages.attendanceRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
                                                           'text-red-600 dark:text-red-400'
                                                         }`}>
-                                                          {student.overall.attendanceRate}%
+                                                          {courseTableData.averages.attendanceRate}%
                                                         </span>
                                                       </td>
                                                     </tr>
-                                                  ))}
-                                                  {/* Average Row */}
-                                                  <tr className="bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 font-bold">
-                                                    <td colSpan="2" className="px-3 py-2 text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-600">
-                                                      Class Average
-                                                    </td>
-                                                    {courseTableData.months.map(month => {
-                                                      // Calculate average for this month
-                                                      let totalRate = 0;
-                                                      let count = 0;
-                                                      courseTableData.students.forEach(student => {
-                                                        const monthData = student.monthlyStats.find(m => m.month === month);
-                                                        if (monthData) {
-                                                          totalRate += parseFloat(monthData.attendanceRate);
-                                                          count++;
-                                                        }
-                                                      });
-                                                      const avgRate = count > 0 ? (totalRate / count).toFixed(1) : '-';
-                                                      return (
-                                                        <td key={month} className="px-3 py-2 text-center border-t-2 border-slate-300 dark:border-slate-600">
-                                                          <span className={`font-bold ${
-                                                            avgRate !== '-' && parseFloat(avgRate) >= 75 ? 'text-green-600 dark:text-green-400' :
-                                                            avgRate !== '-' && parseFloat(avgRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
-                                                            avgRate !== '-' ? 'text-red-600 dark:text-red-400' : 'text-slate-400'
-                                                          }`}>
-                                                            {avgRate !== '-' ? `${avgRate}%` : '-'}
-                                                          </span>
-                                                        </td>
-                                                      );
-                                                    })}
-                                                    <td className="px-3 py-2 text-center border-t-2 border-slate-300 dark:border-slate-600 bg-cyan-100 dark:bg-cyan-900/40">
-                                                      <span className={`font-bold text-base ${
-                                                        parseFloat(courseTableData.averages.attendanceRate) >= 75 ? 'text-green-600 dark:text-green-400' :
-                                                        parseFloat(courseTableData.averages.attendanceRate) >= 50 ? 'text-amber-600 dark:text-amber-400' :
-                                                        'text-red-600 dark:text-red-400'
-                                                      }`}>
-                                                        {courseTableData.averages.attendanceRate}%
-                                                      </span>
-                                                    </td>
-                                                  </tr>
-                                                </tbody>
-                                              </table>
-                                            </div>
-                                          )}
-                                        </div>
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            )}
+                                          </div>
                                       )}
                                     </>
                                   );
@@ -2262,9 +2271,9 @@ export const AnalyticsPage = () => {
                 </div>
               ) : (
                 <div>
-                  <div className="mb-3 flex items-center justify-between">
+                  <div className="mb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                      <h4 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <Table className="w-4 h-4 text-cyan-600" />
                         Course-wise Attendance Overview
                       </h4>
@@ -2277,164 +2286,165 @@ export const AnalyticsPage = () => {
                     <button
                       onClick={exportBatchCourseSummary}
                       disabled={!overviewData || !overviewData.students.length}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all text-sm flex items-center gap-2 shadow-sm whitespace-nowrap"
+                      className="w-full sm:w-auto px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
                       title="Export all courses attendance for all students"
                     >
-                      <Download className="w-4 h-4" />
-                      Export to Excel
+                      <Download className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
+                      <span className="hidden sm:inline">Export to Excel</span>
+                      <span className="sm:hidden">Export</span>
                     </button>
                   </div>
 
-                  <div className="overflow-x-auto border-2 border-slate-200 dark:border-slate-700 rounded-lg">
-                    <table className="text-xs" style={{ minWidth: '100%' }}>
-                      <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0">
-                        <tr>
-                          <th className="px-3 py-3 text-left font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-100 dark:bg-slate-800 z-10 whitespace-nowrap" style={{ minWidth: '200px' }}>
-                            Student
-                          </th>
-                          <th className="px-3 py-3 text-left font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 whitespace-nowrap" style={{ minWidth: '120px' }}>
-                            Reg No
-                          </th>
-                          {overviewData.courses.map(course => (
-                            <th key={course._id} className="px-3 py-3 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 whitespace-nowrap min-w-[120px]">
-                              <div className="font-bold">{course.code}</div>
-                              <div className="text-xs font-normal text-slate-500 dark:text-slate-400 mt-0.5">{course.name}</div>
+                  <div className="border-2 border-slate-200 dark:border-slate-700 rounded-lg overflow-x-auto w-full relative">
+                    <table className="w-full text-xs min-w-max">
+                        <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0">
+                          <tr>
+                            <th className="px-2 sm:px-3 py-2 sm:py-3 text-left font-bold text-slate-900 dark:text-white border-b-2 border-slate-200 dark:border-slate-700 sticky left-0 bg-slate-100 dark:bg-slate-800 z-10 whitespace-nowrap min-w-[80px] sm:min-w-[120px]">
+                              Reg No
                             </th>
-                          ))}
-                          <th className="px-3 py-3 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20 sticky right-0 z-10">
-                            Average
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {overviewData.students.map((student, idx) => {
-                          let totalPercentage = 0;
-                          let courseCount = 0;
+                            <th className="px-2 sm:px-3 py-2 sm:py-3 text-left font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 whitespace-nowrap min-w-[120px] sm:min-w-[200px]">
+                              Student
+                            </th>
+                            {overviewData.courses.map(course => (
+                              <th key={course._id} className="px-2 sm:px-3 py-2 sm:py-3 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 whitespace-nowrap min-w-[90px] sm:min-w-[120px]">
+                                <div className="font-bold text-[10px] sm:text-xs">{course.code}</div>
+                                <div className="text-[9px] sm:text-xs font-normal text-slate-500 dark:text-slate-400 mt-0.5 max-w-[90px] sm:max-w-none truncate">{course.name}</div>
+                              </th>
+                            ))}
+                            <th className="px-2 sm:px-3 py-2 sm:py-3 text-center font-semibold text-slate-700 dark:text-slate-300 border-b-2 border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20 min-w-[70px] sm:min-w-[100px]">
+                              Average
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {overviewData.students.map((student, idx) => {
+                            let totalPercentage = 0;
+                            let courseCount = 0;
 
-                          return (
-                            <tr key={student._id} className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/50'} hover:bg-cyan-50 dark:hover:bg-cyan-900/10 transition-colors`}>
-                              <td className="px-3 py-2 text-slate-900 dark:text-white font-bold border-b border-slate-200 dark:border-slate-700 sticky left-0 bg-inherit z-10 whitespace-nowrap">
-                                {student.name}
-                              </td>
-                              <td className="px-3 py-2 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
-                                {student.registrationNo}
-                              </td>
-                              {overviewData.courses.map(course => {
-                                const courseData = student.courses.find(c => c.courseId === course._id);
-                                const percentage = courseData ? parseFloat(courseData.attendanceRate) : null;
-                                
-                                if (percentage !== null) {
-                                  totalPercentage += percentage;
-                                  courseCount++;
-                                }
+                            return (
+                              <tr key={student._id} className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/50'} hover:bg-cyan-50 dark:hover:bg-cyan-900/10 transition-colors`}>
+                                <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-bold border-b border-slate-200 dark:border-slate-700 sticky left-0 bg-inherit z-20 whitespace-nowrap">
+                                  {student.registrationNo}
+                                </td>
+                                <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-medium border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
+                                  {student.name}
+                                </td>
+                                {overviewData.courses.map(course => {
+                                  const courseData = student.courses.find(c => c.courseId === course._id);
+                                  const percentage = courseData ? parseFloat(courseData.attendanceRate) : null;
+                                  
+                                  if (percentage !== null) {
+                                    totalPercentage += percentage;
+                                    courseCount++;
+                                  }
 
-                                return (
-                                  <td key={course._id} className="px-3 py-2 text-center border-b border-slate-200 dark:border-slate-700">
-                                    {percentage !== null ? (
-                                      <span className={`font-semibold ${
-                                        percentage >= 75 ? 'text-green-600 dark:text-green-400' :
-                                        percentage >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                  return (
+                                    <td key={course._id} className="px-2 sm:px-3 py-1.5 sm:py-2 text-center border-b border-slate-200 dark:border-slate-700">
+                                      {percentage !== null ? (
+                                        <span className={`font-semibold text-[10px] sm:text-xs ${
+                                          percentage >= 75 ? 'text-green-600 dark:text-green-400' :
+                                          percentage >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                          'text-red-600 dark:text-red-400'
+                                        }`}>
+                                          {percentage.toFixed(1)}%
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400 text-[10px] sm:text-xs">-</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-center border-b border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20">
+                                  {(() => {
+                                    const average = courseCount > 0 ? (totalPercentage / courseCount).toFixed(1) : null;
+                                    return average !== null ? (
+                                      <span className={`font-bold text-[10px] sm:text-xs ${
+                                        average >= 75 ? 'text-green-600 dark:text-green-400' :
+                                        average >= 50 ? 'text-amber-600 dark:text-amber-400' :
                                         'text-red-600 dark:text-red-400'
                                       }`}>
-                                        {percentage.toFixed(1)}%
+                                        {average}%
                                       </span>
                                     ) : (
-                                      <span className="text-slate-400">-</span>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                              <td className="px-3 py-2 text-center border-b border-slate-200 dark:border-slate-700 bg-cyan-50 dark:bg-cyan-900/20 sticky right-0 z-10">
-                                {(() => {
-                                  const average = courseCount > 0 ? (totalPercentage / courseCount).toFixed(1) : null;
-                                  return average !== null ? (
-                                    <span className={`font-bold ${
-                                      average >= 75 ? 'text-green-600 dark:text-green-400' :
-                                      average >= 50 ? 'text-amber-600 dark:text-amber-400' :
-                                      'text-red-600 dark:text-red-400'
-                                    }`}>
-                                      {average}%
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400">-</span>
-                                  );
-                                })()}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        
-                        {/* Class Average Row */}
-                        <tr className="bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 font-bold">
-                          <td className="px-3 py-3 text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-600 sticky left-0 bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 z-10 whitespace-nowrap">
-                            Class Average
-                          </td>
-                          <td className="px-3 py-3 border-t-2 border-slate-300 dark:border-slate-600 bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30"></td>
-                          {overviewData.courses.map(course => {
-                            let totalRate = 0;
-                            let count = 0;
-                            overviewData.students.forEach(student => {
-                              const courseData = student.courses.find(c => c.courseId === course._id);
-                              if (courseData) {
-                                totalRate += parseFloat(courseData.attendanceRate);
-                                count++;
-                              }
-                            });
-                            const avgRate = count > 0 ? (totalRate / count).toFixed(1) : null;
-                            
-                            return (
-                              <td key={course._id} className="px-3 py-3 text-center border-t-2 border-slate-300 dark:border-slate-600">
-                                {avgRate !== null ? (
-                                  <span className={`font-bold ${
-                                    avgRate >= 75 ? 'text-green-600 dark:text-green-400' :
-                                    avgRate >= 50 ? 'text-amber-600 dark:text-amber-400' :
-                                    'text-red-600 dark:text-red-400'
-                                  }`}>
-                                    {avgRate}%
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
+                                      <span className="text-slate-400 text-[10px] sm:text-xs">-</span>
+                                    );
+                                  })()}
+                                </td>
+                              </tr>
                             );
                           })}
-                          <td className="px-3 py-3 text-center border-t-2 border-slate-300 dark:border-slate-600 bg-cyan-100 dark:bg-cyan-900/40 sticky right-0 z-10">
-                            {(() => {
-                              let overallTotal = 0;
-                              let overallCount = 0;
-                              overviewData.courses.forEach(course => {
-                                let totalRate = 0;
-                                let count = 0;
-                                overviewData.students.forEach(student => {
-                                  const courseData = student.courses.find(c => c.courseId === course._id);
-                                  if (courseData) {
-                                    totalRate += parseFloat(courseData.attendanceRate);
-                                    count++;
-                                  }
-                                });
-                                if (count > 0) {
-                                  overallTotal += (totalRate / count);
-                                  overallCount++;
+                          
+                          {/* Class Average Row */}
+                          <tr className="bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 font-bold">
+                            <td className="px-2 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-slate-600 sticky left-0 bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 z-20 whitespace-nowrap font-bold">
+                              Class Average
+                            </td>
+                            <td className="px-2 sm:px-3 py-2 sm:py-3 border-t-2 border-slate-300 dark:border-slate-600 bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30"></td>
+                            {overviewData.courses.map(course => {
+                              let totalRate = 0;
+                              let count = 0;
+                              overviewData.students.forEach(student => {
+                                const courseData = student.courses.find(c => c.courseId === course._id);
+                                if (courseData) {
+                                  totalRate += parseFloat(courseData.attendanceRate);
+                                  count++;
                                 }
                               });
-                              const overallAvg = overallCount > 0 ? (overallTotal / overallCount).toFixed(1) : null;
+                              const avgRate = count > 0 ? (totalRate / count).toFixed(1) : null;
                               
-                              return overallAvg !== null ? (
-                                <span className={`font-bold text-base ${
-                                  overallAvg >= 75 ? 'text-green-600 dark:text-green-400' :
-                                  overallAvg >= 50 ? 'text-amber-600 dark:text-amber-400' :
-                                  'text-red-600 dark:text-red-400'
-                                }`}>
-                                  {overallAvg}%
-                                </span>
-                              ) : (
-                                <span className="text-slate-400">-</span>
+                              return (
+                                <td key={course._id} className="px-2 sm:px-3 py-2 sm:py-3 text-center border-t-2 border-slate-300 dark:border-slate-600">
+                                  {avgRate !== null ? (
+                                    <span className={`font-bold text-[10px] sm:text-xs ${
+                                      avgRate >= 75 ? 'text-green-600 dark:text-green-400' :
+                                      avgRate >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                      'text-red-600 dark:text-red-400'
+                                    }`}>
+                                      {avgRate}%
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px] sm:text-xs">-</span>
+                                  )}
+                                </td>
                               );
-                            })()}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+                            })}
+                            <td className="px-2 sm:px-3 py-2 sm:py-3 text-center border-t-2 border-slate-300 dark:border-slate-600 bg-cyan-100 dark:bg-cyan-900/40">
+                              {(() => {
+                                let overallTotal = 0;
+                                let overallCount = 0;
+                                overviewData.courses.forEach(course => {
+                                  let totalRate = 0;
+                                  let count = 0;
+                                  overviewData.students.forEach(student => {
+                                    const courseData = student.courses.find(c => c.courseId === course._id);
+                                    if (courseData) {
+                                      totalRate += parseFloat(courseData.attendanceRate);
+                                      count++;
+                                    }
+                                  });
+                                  if (count > 0) {
+                                    overallTotal += (totalRate / count);
+                                    overallCount++;
+                                  }
+                                });
+                                const overallAvg = overallCount > 0 ? (overallTotal / overallCount).toFixed(1) : null;
+                                
+                                return overallAvg !== null ? (
+                                  <span className={`font-bold text-xs sm:text-sm ${
+                                    overallAvg >= 75 ? 'text-green-600 dark:text-green-400' :
+                                    overallAvg >= 50 ? 'text-amber-600 dark:text-amber-400' :
+                                    'text-red-600 dark:text-red-400'
+                                  }`}>
+                                    {overallAvg}%
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[10px] sm:text-xs">-</span>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                   </div>
                 </div>
               )
@@ -2442,6 +2452,7 @@ export const AnalyticsPage = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
