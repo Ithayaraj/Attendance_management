@@ -5,9 +5,29 @@ export const getDevices = async (req, res, next) => {
   try {
     const devices = await Device.find().sort({ name: 1 });
 
+    // Auto-update device status based on last seen time
+    // Consider device offline if not seen in last 2 minutes
+    const OFFLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+    const now = new Date();
+    
+    const updatedDevices = await Promise.all(
+      devices.map(async (device) => {
+        if (device.lastSeenAt) {
+          const timeSinceLastSeen = now - new Date(device.lastSeenAt);
+          const shouldBeOffline = timeSinceLastSeen > OFFLINE_THRESHOLD_MS;
+          
+          if (shouldBeOffline && device.status === 'online') {
+            device.status = 'offline';
+            await device.save();
+          }
+        }
+        return device;
+      })
+    );
+
     res.json({
       success: true,
-      data: devices
+      data: updatedDevices
     });
   } catch (error) {
     next(error);

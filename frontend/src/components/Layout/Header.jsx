@@ -1,11 +1,9 @@
-import { LogOut, Moon, Sun, Bell, Menu, X } from 'lucide-react';
+import { LogOut, Moon, Sun, Menu, X } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { ButtonSpinner } from '../LoadingSpinner';
-import { useNotification } from '../../contexts/NotificationContext';
 
 export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = false, onMenuClick }) => {
   const { isDark, toggleTheme } = useTheme();
-  const { showNotification } = useNotification();
 
   return (
     <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 w-full">
@@ -37,37 +35,6 @@ export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = fa
 
           {user && (
             <div className="flex items-center gap-3">
-              <button 
-                onClick={async () => {
-                  // Test WebSocket broadcast from backend
-                  try {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-                    const response = await fetch(`${apiUrl}/api/scans/test-broadcast`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                    });
-                    const data = await response.json();
-                    console.log('Test broadcast response:', data);
-                  } catch (error) {
-                    console.error('Test broadcast error:', error);
-                    // Fallback: show test notification directly
-                    showNotification({
-                      type: 'success',
-                      title: 'Attendance Recorded (Present)',
-                      message: 'John Doe\n2021/ICTS/001 • TICT4214\nCheck-in: 11:24 PM',
-                      duration: 6000,
-                    });
-                  }
-                }}
-                className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors relative"
-                title="Test WebSocket broadcast"
-              >
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
-
               <button
                 onClick={toggleTheme}
                 className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"

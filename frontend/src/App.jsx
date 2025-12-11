@@ -13,7 +13,7 @@ import { StudentsPage } from './pages/StudentsPage';
 import { BatchesPage } from './pages/BatchesPage';
 import { StudentDetailPage } from './pages/StudentDetailPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
-import { SettingsPage } from './pages/SettingsPage';
+import { DevicesPage } from './pages/DevicesPage';
 import { Activity, Eye, EyeOff } from 'lucide-react';
 import { PageLoader, ButtonSpinner } from './components/LoadingSpinner';
 
@@ -24,7 +24,7 @@ function AppContent() {
   // Initialize currentPage from URL or default to dashboard
   const getInitialPage = () => {
     const path = window.location.pathname.slice(1) || 'dashboard';
-    const validPages = ['dashboard', 'students', 'courses', 'sessions', 'batches', 'analytics', 'settings'];
+    const validPages = ['dashboard', 'students', 'courses', 'sessions', 'batches', 'analytics', 'devices'];
     return validPages.includes(path) ? path : 'dashboard';
   };
 
@@ -49,7 +49,7 @@ function AppContent() {
   useEffect(() => {
     const handlePopState = (event) => {
       const path = window.location.pathname.slice(1) || 'dashboard';
-      const validPages = ['dashboard', 'students', 'courses', 'sessions', 'batches', 'analytics', 'settings'];
+      const validPages = ['dashboard', 'students', 'courses', 'sessions', 'batches', 'analytics', 'devices'];
       if (validPages.includes(path)) {
         setCurrentPage(path);
         setSelectedStudent(null);
@@ -301,7 +301,7 @@ function AppContent() {
       case 'courses': return 'Courses';
       case 'sessions': return 'Sessions';
       case 'analytics': return 'Analytics';
-      case 'settings': return 'Settings';
+      case 'devices': return 'Devices';
       default: return 'Dashboard';
     }
   };
@@ -376,8 +376,8 @@ function AppContent() {
               <BatchesPage />
             ) : currentPage === 'analytics' ? (
               <AnalyticsPage />
-            ) : currentPage === 'settings' ? (
-              <SettingsPage />
+            ) : currentPage === 'devices' ? (
+              <DevicesPage />
             ) : (
               <div className="py-10 text-center text-slate-600 dark:text-slate-400">
                 {currentPage.charAt(0).toUpperCase() + currentPage.slice(1)} page - Coming soon

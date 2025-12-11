@@ -84,6 +84,7 @@ router.get('/analytics/batch/line', requireAuth, analyticsController.getBatchLin
 router.get('/analytics/batch-wise', requireAuth, analyticsController.getBatchWiseStats);
 router.get('/analytics/batch/:batchId/courses', requireAuth, analyticsController.getBatchCoursesStats);
 router.get('/analytics/batch/:batchId/course/:courseId', requireAuth, analyticsController.getBatchCourseAttendanceStats);
+router.get('/analytics/batch/:batchId/course/:courseId/details', requireAuth, analyticsController.getCourseStudentAttendanceDetailsStats);
 router.get('/analytics/batch/:batchId/students', requireAuth, analyticsController.getBatchStudentsStats);
 router.get('/analytics/batch/:batchId/student/:studentId', requireAuth, analyticsController.getStudentCourseAttendanceStats);
 router.get('/analytics/students/:id', requireAuth, studentAnalyticsController.getStudentAnalytics);

@@ -1,4 +1,4 @@
-import { Home, Users, BookOpen, Calendar, BarChart3, Settings, GraduationCap, X, LogOut } from 'lucide-react';
+import { Home, Users, BookOpen, Calendar, BarChart3, Smartphone, GraduationCap, X, LogOut } from 'lucide-react';
 
 const Logo = () => (
   <div className="flex items-center gap-3">
@@ -34,7 +34,7 @@ export const Sidebar = ({ currentPage, onNavigate, isOpen = false, onClose, onLo
     { id: 'sessions', label: 'Sessions', icon: Calendar },
     { id: 'batches', label: 'Batches', icon: GraduationCap },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'devices', label: 'Devices', icon: Smartphone },
   ];
 
   const renderButton = (item) => {

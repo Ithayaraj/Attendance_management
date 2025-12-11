@@ -1,4 +1,4 @@
-import { getMonthlyAnalytics, getLiveSessionAnalytics, getSessionSummaryByYear, getBatchLineAnalytics, getCurrentSessions, getBatchWiseAttendance, getBatchCourseAttendance, getBatchCourses, getBatchStudents, getStudentCourseAttendance } from '../services/analyticsService.js';
+import { getMonthlyAnalytics, getLiveSessionAnalytics, getSessionSummaryByYear, getBatchLineAnalytics, getCurrentSessions, getBatchWiseAttendance, getBatchCourseAttendance, getBatchCourses, getBatchStudents, getStudentCourseAttendance, getCourseStudentAttendanceDetails } from '../services/analyticsService.js';
 
 export const getMonthlyStats = async (req, res, next) => {
   try {
@@ -106,8 +106,19 @@ export const getBatchStudentsStats = async (req, res, next) => {
 export const getStudentCourseAttendanceStats = async (req, res, next) => {
   try {
     const { batchId, studentId } = req.params;
+    const { startDate, endDate, courseId } = req.query;
+    const data = await getStudentCourseAttendance(studentId, batchId, startDate, endDate, courseId);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCourseStudentAttendanceDetailsStats = async (req, res, next) => {
+  try {
+    const { batchId, courseId } = req.params;
     const { startDate, endDate } = req.query;
-    const data = await getStudentCourseAttendance(studentId, batchId, startDate, endDate);
+    const data = await getCourseStudentAttendanceDetails(batchId, courseId, startDate, endDate);
     res.json({ success: true, data });
   } catch (error) {
     next(error);

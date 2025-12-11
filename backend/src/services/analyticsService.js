@@ -620,7 +620,7 @@ export const getBatchStudents = async (batchId, page = 1, limit = 10, search = '
   };
 };
 
-export const getStudentCourseAttendance = async (studentId, batchId, startDate = null, endDate = null) => {
+export const getStudentCourseAttendance = async (studentId, batchId, startDate = null, endDate = null, courseId = null) => {
   const { Batch } = await import('../models/Batch.js');
   
   const batch = await Batch.findById(batchId);
@@ -638,6 +638,11 @@ export const getStudentCourseAttendance = async (studentId, batchId, startDate =
     year: batch.currentYear,
     semester: batch.currentSemester
   };
+  
+  // Add course filter if provided
+  if (courseId) {
+    sessionQuery.courseId = courseId;
+  }
   
   // Add date range filter if provided
   if (startDate && endDate) {
@@ -709,6 +714,175 @@ export const getStudentCourseAttendance = async (studentId, batchId, startDate =
       semester: student.semester
     },
     courses: courseStats,
+    dateRange: (startDate && endDate) ? { startDate, endDate } : null
+  };
+};
+
+export const getCourseStudentAttendanceDetails = async (batchId, courseId, startDate = null, endDate = null) => {
+  const { Batch } = await import('../models/Batch.js');
+  const { Course } = await import('../models/Course.js');
+  
+  const batch = await Batch.findById(batchId);
+  if (!batch) {
+    throw new Error('Batch not found');
+  }
+  
+  const course = await Course.findById(courseId);
+  if (!course) {
+    throw new Error('Course not found');
+  }
+  
+  // Get all students in this batch
+  const students = await Student.find({
+    department: batch.department,
+    year: batch.currentYear
+  }).sort({ name: 1 });
+  
+  // Build session query with optional date range
+  const sessionQuery = {
+    courseId: courseId,
+    year: batch.currentYear,
+    semester: batch.currentSemester
+  };
+  
+  // Add date range filter if provided
+  if (startDate && endDate) {
+    sessionQuery.date = { $gte: startDate, $lte: endDate };
+  } else if (startDate) {
+    sessionQuery.date = { $gte: startDate };
+  } else if (endDate) {
+    sessionQuery.date = { $lte: endDate };
+  }
+  
+  // Get sessions for this batch and course
+  const sessions = await ClassSession.find(sessionQuery).select('_id date').sort({ date: 1 });
+  
+  const sessionIds = sessions.map(s => s._id);
+  
+  // Get all attendance records
+  const records = await AttendanceRecord.find({
+    sessionId: { $in: sessionIds }
+  });
+  
+  // Create a map for quick lookup: studentId -> sessionId -> status
+  const attendanceMap = new Map();
+  for (const record of records) {
+    const studentKey = record.studentId.toString();
+    if (!attendanceMap.has(studentKey)) {
+      attendanceMap.set(studentKey, new Map());
+    }
+    attendanceMap.get(studentKey).set(record.sessionId.toString(), record.status);
+  }
+  
+  // Group sessions by month
+  const monthlySessionsMap = new Map();
+  for (const session of sessions) {
+    const monthKey = session.date.slice(0, 7); // YYYY-MM
+    if (!monthlySessionsMap.has(monthKey)) {
+      monthlySessionsMap.set(monthKey, []);
+    }
+    monthlySessionsMap.get(monthKey).push(session);
+  }
+  
+  // Calculate student-wise attendance
+  const studentAttendance = students.map(student => {
+    const studentKey = student._id.toString();
+    const studentRecords = attendanceMap.get(studentKey) || new Map();
+    
+    // Overall stats
+    let totalPresent = 0;
+    let totalLate = 0;
+    let totalAbsent = 0;
+    
+    // Monthly stats
+    const monthlyStats = [];
+    
+    for (const [monthKey, monthSessions] of monthlySessionsMap.entries()) {
+      let monthPresent = 0;
+      let monthLate = 0;
+      let monthAbsent = 0;
+      
+      for (const session of monthSessions) {
+        const status = studentRecords.get(session._id.toString()) || 'absent';
+        if (status === 'present') {
+          monthPresent++;
+          totalPresent++;
+        } else if (status === 'late') {
+          monthLate++;
+          totalLate++;
+        } else {
+          monthAbsent++;
+          totalAbsent++;
+        }
+      }
+      
+      const monthTotal = monthPresent + monthLate + monthAbsent;
+      const monthAttendanceRate = monthTotal > 0 ? ((monthPresent + monthLate) / monthTotal * 100) : 0;
+      
+      monthlyStats.push({
+        month: monthKey,
+        present: monthPresent,
+        late: monthLate,
+        absent: monthAbsent,
+        total: monthTotal,
+        attendanceRate: monthAttendanceRate.toFixed(1)
+      });
+    }
+    
+    const overallTotal = totalPresent + totalLate + totalAbsent;
+    const overallAttendanceRate = overallTotal > 0 ? ((totalPresent + totalLate) / overallTotal * 100) : 0;
+    
+    return {
+      studentId: student._id,
+      name: student.name,
+      registrationNo: student.registrationNo,
+      monthlyStats,
+      overall: {
+        present: totalPresent,
+        late: totalLate,
+        absent: totalAbsent,
+        total: overallTotal,
+        attendanceRate: overallAttendanceRate.toFixed(1)
+      }
+    };
+  });
+  
+  // Calculate overall averages
+  const totalStudents = students.length;
+  let avgPresent = 0;
+  let avgLate = 0;
+  let avgAbsent = 0;
+  let avgAttendanceRate = 0;
+  
+  if (totalStudents > 0) {
+    for (const student of studentAttendance) {
+      avgPresent += student.overall.present;
+      avgLate += student.overall.late;
+      avgAbsent += student.overall.absent;
+      avgAttendanceRate += parseFloat(student.overall.attendanceRate);
+    }
+    avgPresent = (avgPresent / totalStudents).toFixed(1);
+    avgLate = (avgLate / totalStudents).toFixed(1);
+    avgAbsent = (avgAbsent / totalStudents).toFixed(1);
+    avgAttendanceRate = (avgAttendanceRate / totalStudents).toFixed(1);
+  }
+  
+  // Get unique months for column headers
+  const months = Array.from(monthlySessionsMap.keys()).sort();
+  
+  return {
+    courseId: course._id,
+    courseCode: course.code,
+    courseName: course.name,
+    totalSessions: sessions.length,
+    months,
+    students: studentAttendance,
+    averages: {
+      present: avgPresent,
+      late: avgLate,
+      absent: avgAbsent,
+      attendanceRate: avgAttendanceRate
+    },
     dateRange: (startDate && endDate) ? { startDate, endDate } : null
   };
 };

@@ -58,10 +58,10 @@ export const CustomSelect = ({
           ${isOpen ? 'ring-2 ring-cyan-500' : ''}
         `}
       >
-        <span className="text-xs sm:text-sm truncate min-w-0 flex-1 text-left flex items-center gap-2">
+        <span className="text-xs sm:text-sm truncate min-w-0 flex-1 text-left flex items-center gap-2" title={selectedOption?.label || placeholder}>
           {loading ? 'Loading...' : selectedOption ? (
             <>
-              <span className="truncate">{selectedOption.label}</span>
+              <span className="truncate" title={selectedOption.label}>{selectedOption.label}</span>
               {selectedOption.badge && (
                 <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-500 text-white text-xs font-bold rounded-full">
                   <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
@@ -86,6 +86,7 @@ export const CustomSelect = ({
                 key={option.value}
                 type="button"
                 onClick={() => handleSelect(option.value)}
+                title={option.label}
                 className={`
                   w-full text-left px-2.5 sm:px-3 py-1.5 sm:py-2 
                   text-xs sm:text-sm
@@ -96,7 +97,7 @@ export const CustomSelect = ({
                   flex items-center justify-between gap-2
                 `}
               >
-                <span className="flex-1 truncate">{option.label}</span>
+                <span className="flex-1 truncate" title={option.label}>{option.label}</span>
                 {option.badge && (
                   <span className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 bg-green-500 text-white text-xs font-bold rounded-full">
                     <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
