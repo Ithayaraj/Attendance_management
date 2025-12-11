@@ -278,7 +278,21 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
     }
 
     // Step 3: Select the active session
-    session = liveSessions.length > 0 ? liveSessions[0] : activeSessions[0];
+    // Prioritize order: LIVE > SCHEDULED > COMPLETED
+    if (liveSessions.length > 0) {
+      session = liveSessions[0];
+    } else {
+      const scheduledSessions = activeSessions.filter(s => s.status === 'scheduled');
+      const completedSessions = activeSessions.filter(s => s.status === 'completed');
+
+      if (scheduledSessions.length > 0) {
+        session = scheduledSessions[0];
+      } else if (completedSessions.length > 0) {
+        session = completedSessions[0];
+      } else {
+        session = activeSessions[0];
+      }
+    }
 
     if (!session) {
       throw new Error(`No active session found for ${studentDeptCode} Y${studentYear}S${studentSemester}`);
