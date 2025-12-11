@@ -327,16 +327,53 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
   // Grace period: students arriving within GRACE_PERIOD_MINUTES are marked "present"
   // After grace period but before end: marked "late"
   // After session end: rejected
-  const adjustedEnd = addMinutes(session.endTime, END_TOLERANCE_MINUTES);
-  const timeCheck = isTimeInRange(scannedTime, session.startTime, adjustedEnd, GRACE_PERIOD_MINUTES);
+  // Step 5: Check if scan is within valid time window
+  // Use absolute time difference to handle date wraparounds and "Early Access" validation
+  // We treat session times as UTC to match the 'istDate' which stores Local Time in UTC components
+  const sessionStartIso = `${session.date}T${session.startTime}:00Z`;
+  let sessionStart = new Date(sessionStartIso);
+
+  // Calculate difference in minutes
+  // istDate is the scan time (shifted to look like Local Time in UTC)
+  const diffMinutes = (istDate.getTime() - sessionStart.getTime()) / 60000;
+
+  const EARLY_ACCESS_MINUTES = 15;
+
+  console.log(`⏱️ Time Check:`);
+  console.log(`   Session Start: ${sessionStartIso}`);
+  console.log(`   Scan Time: ${istDate.toISOString()}`);
+  console.log(`   Diff Minutes: ${diffMinutes.toFixed(2)}`);
+
+  if (diffMinutes < -EARLY_ACCESS_MINUTES) {
+    throw new Error(`Session has not started yet. Starts at ${session.startTime}.`);
+  }
+
+  // Grace period and End window logic
+  // Grace period: students arriving within GRACE_PERIOD_MINUTES are marked "present"
+  // After grace period but before end: marked "late"
+  // After session end: rejected
+
+  // Calculate absolute End Date
+  let sessionEndIso = `${session.date}T${session.endTime}:00Z`;
+  let sessionEnd = new Date(sessionEndIso);
+
+  if (sessionEnd < sessionStart) {
+    // Handle wrap-around (Next Day)
+    sessionEnd = new Date(sessionEnd.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  const minutesPastEnd = (istDate.getTime() - sessionEnd.getTime()) / 60000;
+
+  if (minutesPastEnd > END_TOLERANCE_MINUTES) {
+    throw new Error(`Session ended at ${session.endTime}`);
+  }
 
   let attendanceStatus = 'absent';
-  if (timeCheck.isBeforeGrace) {
+
+  if (diffMinutes <= GRACE_PERIOD_MINUTES) {
     attendanceStatus = 'present';
-  } else if (timeCheck.isBeforeEnd) {
-    attendanceStatus = 'late';
   } else {
-    throw new Error(`Session ended at ${session.endTime}`);
+    attendanceStatus = 'late';
   }
 
   // Step 6: Record the scan
