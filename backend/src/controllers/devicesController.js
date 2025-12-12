@@ -120,8 +120,10 @@ export const rotateDeviceKey = async (req, res, next) => {
 
 export const deleteDevice = async (req, res, next) => {
   try {
-    const device = await Device.findByIdAndDelete(req.params.id);
+    const { force } = req.query;
+    const deviceId = req.params.id;
 
+    const device = await Device.findById(deviceId);
     if (!device) {
       return res.status(404).json({
         success: false,
@@ -129,9 +131,39 @@ export const deleteDevice = async (req, res, next) => {
       });
     }
 
+    // Check if there are related records
+    const scanCount = await (await import('../models/Scan.js')).Scan.countDocuments({ deviceId });
+
+    const hasRelatedData = scanCount > 0;
+
+    // If there's related data and force is not specified, return conflict
+    if (hasRelatedData && force !== 'true') {
+      return res.status(409).json({
+        success: false,
+        message: 'Device has related data',
+        relatedData: {
+          scanRecords: scanCount
+        },
+        requiresForceDelete: true
+      });
+    }
+
+    // If force delete is requested, delete all related data
+    if (force === 'true') {
+      const { Scan } = await import('../models/Scan.js');
+
+      await Promise.all([
+        // Delete scan records
+        Scan.deleteMany({ deviceId })
+      ]);
+    }
+
+    // Delete the device
+    await Device.findByIdAndDelete(deviceId);
+
     res.json({
       success: true,
-      message: 'Device deleted successfully'
+      message: force === 'true' ? 'Device and all related data deleted' : 'Device deleted successfully'
     });
   } catch (error) {
     next(error);

@@ -297,14 +297,25 @@ export const DevicesPage = () => {
     setShowDeleteModal(true);
   }, []);
 
-  const confirmDeleteDevice = async () => {
+  const confirmDeleteDevice = async (forceDelete = false) => {
     try {
-      await apiClient.delete(`/api/devices/${deletingDevice._id}`);
+      const url = forceDelete ? `/api/devices/${deletingDevice._id}?force=true` : `/api/devices/${deletingDevice._id}`;
+      await apiClient.delete(url);
       setShowDeleteModal(false);
       setDeletingDevice(null);
       await loadDevices(true);
     } catch (error) {
-      alert('Error deleting device: ' + error.message);
+      if (error.response?.status === 409 && error.response?.data?.requiresForceDelete) {
+        // Device has related data, show force delete confirmation
+        const relatedData = error.response.data.relatedData;
+        const message = `This device has ${relatedData.scanRecords} scan record${relatedData.scanRecords !== 1 ? 's' : ''} that will also be deleted.\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+        
+        if (confirm(`Force Delete Required\n\n${message}`)) {
+          await confirmDeleteDevice(true);
+        }
+      } else {
+        alert('Error deleting device: ' + error.message);
+      }
     }
   };
 

@@ -7,6 +7,15 @@ export const SessionDetailModal = ({ session, onClose }) => {
   const [showStudentList, setShowStudentList] = useState(null); // 'total', 'present', 'late', 'absent', 'notAttending'
   const [students, setStudents] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [chartsReady, setChartsReady] = useState(false);
+
+  // Delay chart rendering to ensure containers are properly sized
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setChartsReady(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (!session) return null;
 
@@ -247,33 +256,39 @@ export const SessionDetailModal = ({ session, onClose }) => {
                 <div className="w-1 h-5 bg-cyan-500 rounded"></div>
                 Attendance Distribution
               </h3>
-              <div className="h-56 sm:h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ percentage }) => `${percentage}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} stroke="#ffffff" className="dark:stroke-slate-900" strokeWidth={2} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      formatter={(value, name, props) => [`${value} students (${props.payload.percentage}%)`, name]}
-                      contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
-                      labelStyle={{ color: '#1e293b' }}
-                      itemStyle={{ color: '#475569' }}
-                      wrapperClassName="dark:[&>div]:!bg-slate-800 dark:[&>div]:!border-slate-600"
-                    />
-                    <Legend iconSize={10} wrapperStyle={{ fontSize: '12px', color: '#475569' }} />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="w-full h-56 sm:h-64" style={{ minWidth: '300px', minHeight: '224px' }}>
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart width={300} height={224}>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ percentage }) => `${percentage}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} stroke="#ffffff" className="dark:stroke-slate-900" strokeWidth={2} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value, name, props) => [`${value} students (${props.payload.percentage}%)`, name]}
+                        contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
+                        labelStyle={{ color: '#1e293b' }}
+                        itemStyle={{ color: '#475569' }}
+                        wrapperClassName="dark:[&>div]:!bg-slate-800 dark:[&>div]:!border-slate-600"
+                      />
+                      <Legend iconSize={10} wrapperStyle={{ fontSize: '12px', color: '#475569' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-slate-400 text-sm">Loading chart...</div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -283,21 +298,27 @@ export const SessionDetailModal = ({ session, onClose }) => {
                 <div className="w-1 h-5 bg-cyan-500 rounded"></div>
                 Student Count Breakdown
               </h3>
-              <div className="h-56 sm:h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" className="dark:stroke-slate-600" />
-                    <XAxis dataKey="name" stroke="#64748b" className="dark:stroke-slate-400" style={{ fontSize: '11px' }} />
-                    <YAxis stroke="#64748b" className="dark:stroke-slate-400" style={{ fontSize: '11px' }} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
-                      labelStyle={{ color: '#1e293b' }}
-                      itemStyle={{ color: '#475569' }}
-                      wrapperClassName="dark:[&>div]:!bg-slate-800 dark:[&>div]:!border-slate-600"
-                    />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="w-full h-56 sm:h-64" style={{ minWidth: '300px', minHeight: '224px' }}>
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart width={300} height={224} data={barData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" className="dark:stroke-slate-600" />
+                      <XAxis dataKey="name" stroke="#64748b" className="dark:stroke-slate-400" style={{ fontSize: '11px' }} />
+                      <YAxis stroke="#64748b" className="dark:stroke-slate-400" style={{ fontSize: '11px' }} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '12px' }}
+                        labelStyle={{ color: '#1e293b' }}
+                        itemStyle={{ color: '#475569' }}
+                        wrapperClassName="dark:[&>div]:!bg-slate-800 dark:[&>div]:!border-slate-600"
+                      />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-slate-400 text-sm">Loading chart...</div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

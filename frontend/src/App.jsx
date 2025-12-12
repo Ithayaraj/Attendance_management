@@ -351,30 +351,30 @@ function AppContent() {
           />
 
           <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin p-4 sm:p-6 w-full max-w-full">
-            {selectedStudent ? (
-              <StudentDetailPage
-                student={selectedStudent}
-                onBack={() => setSelectedStudent(null)}
-              />
-            ) : currentPage === 'dashboard' ? (
-              <DashboardPage />
-            ) : currentPage === 'students' ? (
-              <StudentsPage onViewStudent={setSelectedStudent} />
-            ) : currentPage === 'courses' ? (
-              <CoursesPage />
-            ) : currentPage === 'sessions' ? (
-              <SessionsPage />
-            ) : currentPage === 'batches' ? (
-              <BatchesPage />
-            ) : currentPage === 'analytics' ? (
-              <AnalyticsPage />
-            ) : currentPage === 'devices' ? (
-              <DevicesPage />
-            ) : (
-              <div className="py-10 text-center text-slate-600 dark:text-slate-400">
-                {currentPage.charAt(0).toUpperCase() + currentPage.slice(1)} page - Coming soon
-              </div>
-            )}
+              {selectedStudent ? (
+                <StudentDetailPage
+                  student={selectedStudent}
+                  onBack={() => setSelectedStudent(null)}
+                />
+              ) : currentPage === 'dashboard' ? (
+                <DashboardPage />
+              ) : currentPage === 'students' ? (
+                <StudentsPage onViewStudent={setSelectedStudent} />
+              ) : currentPage === 'courses' ? (
+                <CoursesPage />
+              ) : currentPage === 'sessions' ? (
+                <SessionsPage />
+              ) : currentPage === 'batches' ? (
+                <BatchesPage />
+              ) : currentPage === 'analytics' ? (
+                <AnalyticsPage />
+              ) : currentPage === 'devices' ? (
+                <DevicesPage />
+              ) : (
+                <div className="py-10 text-center text-slate-600 dark:text-slate-400">
+                  {currentPage.charAt(0).toUpperCase() + currentPage.slice(1)} page - Coming soon
+                </div>
+              )}
           </main>
         </div>
       </div>

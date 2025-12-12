@@ -1,7 +1,17 @@
+import { useState, useEffect } from 'react';
 import { Clock, Users, AlertCircle, BookOpen } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 export const SessionContainer = ({ session, onClick }) => {
+  const [chartReady, setChartReady] = useState(false);
+
+  // Delay chart rendering to ensure container is properly sized
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setChartReady(true);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
   const isLive = session.status === 'live';
   const attendingCount = session.scannedCount || (session.present + session.late);
   const notAttendingCount = session.notAttending;
@@ -99,24 +109,30 @@ export const SessionContainer = ({ session, onClick }) => {
         {/* Right Side - Pie Chart (Hidden on mobile, shown on sm+) */}
         <div className="hidden sm:flex flex-shrink-0 w-36 flex-col">
           <p className="text-xs font-bold text-slate-300 text-center mb-1">Attendance Status</p>
-          <div className="h-28 mb-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={22}
-                  outerRadius={48}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} stroke="#1e293b" strokeWidth={2} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="h-28 mb-2 w-full" style={{ minWidth: '144px', minHeight: '112px' }}>
+            {chartReady ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart width={144} height={112}>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={22}
+                    outerRadius={48}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} stroke="#1e293b" strokeWidth={2} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="w-16 h-16 bg-slate-200 dark:bg-slate-700 rounded-full animate-pulse"></div>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             <div className="bg-blue-100 dark:bg-blue-600/20 rounded p-1.5 text-center border border-blue-300 dark:border-blue-500/30">

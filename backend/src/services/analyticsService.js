@@ -416,12 +416,19 @@ export const getBatchWiseAttendance = async () => {
       const studentIds = students.map(s => s._id);
 
       // Get all sessions for this batch
+      // First try with department filter, then populate courseId to check course department for sessions without department field
       const sessions = await ClassSession.find({
         year: batch.currentYear,
         semester: batch.currentSemester
-      }).select('_id');
+      }).populate('courseId', 'department').select('_id department courseId');
 
-      const sessionIds = sessions.map(s => s._id);
+      // Filter sessions by department (either session.department or courseId.department)
+      const filteredSessions = sessions.filter(session => {
+        const sessionDepartment = session.department || session.courseId?.department;
+        return sessionDepartment === batch.department;
+      });
+
+      const sessionIds = filteredSessions.map(s => s._id);
 
       // Get attendance records
       const records = await AttendanceRecord.find({
@@ -436,7 +443,7 @@ export const getBatchWiseAttendance = async () => {
       }
 
       // Calculate expected total (students × sessions)
-      const expectedTotal = students.length * sessions.length;
+      const expectedTotal = students.length * filteredSessions.length;
       const recordedTotal = stats.present + stats.late + stats.absent;
       stats.absent += Math.max(0, expectedTotal - recordedTotal);
 
@@ -451,7 +458,7 @@ export const getBatchWiseAttendance = async () => {
         currentYear: batch.currentYear,
         currentSemester: batch.currentSemester,
         totalStudents: students.length,
-        totalSessions: sessions.length,
+        totalSessions: filteredSessions.length,
         present: stats.present,
         late: stats.late,
         absent: stats.absent,
@@ -501,8 +508,14 @@ export const getBatchCourseAttendance = async (batchId, courseId, startDate = nu
     sessionQuery.date = { $lte: endDate };
   }
 
-  // Get sessions for this batch and course
-  const sessions = await ClassSession.find(sessionQuery).select('_id');
+  // Get sessions for this batch and course, then filter by department
+  const allSessions = await ClassSession.find(sessionQuery).populate('courseId', 'department').select('_id department courseId');
+  
+  // Filter sessions by department (either session.department or courseId.department)
+  const sessions = allSessions.filter(session => {
+    const sessionDepartment = session.department || session.courseId?.department;
+    return sessionDepartment === batch.department;
+  });
 
   const sessionIds = sessions.map(s => s._id);
 
@@ -554,22 +567,28 @@ export const getBatchCourses = async (batchId) => {
     throw new Error('Batch not found');
   }
 
-  // Get all sessions for this batch
+  // Get all sessions for this batch, filtering by department, year, and semester
   const sessions = await ClassSession.find({
     year: batch.currentYear,
     semester: batch.currentSemester
-  }).populate('courseId').select('courseId');
+  }).populate('courseId').select('courseId department');
 
-  // Extract unique courses
+  // Extract unique courses, filtering by department
   const courseMap = new Map();
   for (const session of sessions) {
     if (session.courseId) {
-      courseMap.set(session.courseId._id.toString(), {
-        _id: session.courseId._id,
-        code: session.courseId.code,
-        name: session.courseId.name,
-        department: session.courseId.department
-      });
+      // Check department from session or course
+      const sessionDepartment = session.department || session.courseId.department;
+      
+      // Only include courses that belong to the batch's department
+      if (sessionDepartment === batch.department) {
+        courseMap.set(session.courseId._id.toString(), {
+          _id: session.courseId._id,
+          code: session.courseId.code,
+          name: session.courseId.name,
+          department: session.courseId.department
+        });
+      }
     }
   }
 
@@ -606,7 +625,7 @@ export const getBatchStudents = async (batchId, page = 1, limit = 10, search = '
   // Get paginated students
   const students = await Student.find(query)
     .select('_id name registrationNo email mobile year semester')
-    .sort({ name: 1 })
+    .sort({ registrationNo: 1 })
     .skip((page - 1) * limit)
     .limit(limit);
 
@@ -654,8 +673,14 @@ export const getStudentCourseAttendance = async (studentId, batchId, startDate =
     sessionQuery.date = { $lte: endDate };
   }
 
-  // Get all sessions for this batch
-  const sessions = await ClassSession.find(sessionQuery).populate('courseId').select('_id courseId');
+  // Get all sessions for this batch, then filter by department
+  const allSessions = await ClassSession.find(sessionQuery).populate('courseId').select('_id courseId department');
+  
+  // Filter sessions by department (either session.department or courseId.department)
+  const sessions = allSessions.filter(session => {
+    const sessionDepartment = session.department || session.courseId?.department;
+    return sessionDepartment === batch.department;
+  });
 
   const sessionIds = sessions.map(s => s._id);
 
@@ -737,7 +762,7 @@ export const getCourseStudentAttendanceDetails = async (batchId, courseId, start
   const students = await Student.find({
     department: batch.department,
     year: batch.currentYear
-  }).sort({ name: 1 });
+  }).sort({ registrationNo: 1 });
 
   // Build session query with optional date range
   const sessionQuery = {
@@ -755,8 +780,14 @@ export const getCourseStudentAttendanceDetails = async (batchId, courseId, start
     sessionQuery.date = { $lte: endDate };
   }
 
-  // Get sessions for this batch and course
-  const sessions = await ClassSession.find(sessionQuery).select('_id date').sort({ date: 1 });
+  // Get sessions for this batch and course, then filter by department
+  const allSessions = await ClassSession.find(sessionQuery).populate('courseId', 'department').select('_id date department courseId').sort({ date: 1 });
+  
+  // Filter sessions by department (either session.department or courseId.department)
+  const sessions = allSessions.filter(session => {
+    const sessionDepartment = session.department || session.courseId?.department;
+    return sessionDepartment === batch.department;
+  });
 
   const sessionIds = sessions.map(s => s._id);
 

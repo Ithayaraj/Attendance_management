@@ -92,7 +92,7 @@ export const getStudents = async (req, res, next) => {
     const students = await Student.find(query)
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .sort({ name: 1 });
+      .sort({ registrationNo: 1 });
 
     console.log(`Found ${total} students matching query`);
 
@@ -173,8 +173,10 @@ export const updateStudent = async (req, res, next) => {
 
 export const deleteStudent = async (req, res, next) => {
   try {
-    const student = await Student.findByIdAndDelete(req.params.id);
+    const { force } = req.query;
+    const studentId = req.params.id;
 
+    const student = await Student.findById(studentId);
     if (!student) {
       return res.status(404).json({
         success: false,
@@ -182,9 +184,46 @@ export const deleteStudent = async (req, res, next) => {
       });
     }
 
+    // Check if there are related records
+    const [enrollmentCount, attendanceCount] = await Promise.all([
+      (await import('../models/Enrollment.js')).Enrollment.countDocuments({ studentId }),
+      (await import('../models/AttendanceRecord.js')).AttendanceRecord.countDocuments({ studentId })
+    ]);
+
+    const hasRelatedData = enrollmentCount > 0 || attendanceCount > 0;
+
+    // If there's related data and force is not specified, return conflict
+    if (hasRelatedData && force !== 'true') {
+      return res.status(409).json({
+        success: false,
+        message: 'Student has related data',
+        relatedData: {
+          enrollments: enrollmentCount,
+          attendanceRecords: attendanceCount
+        },
+        requiresForceDelete: true
+      });
+    }
+
+    // If force delete is requested, delete all related data
+    if (force === 'true') {
+      const { Enrollment } = await import('../models/Enrollment.js');
+      const { AttendanceRecord } = await import('../models/AttendanceRecord.js');
+
+      await Promise.all([
+        // Delete enrollments
+        Enrollment.deleteMany({ studentId }),
+        // Delete attendance records
+        AttendanceRecord.deleteMany({ studentId })
+      ]);
+    }
+
+    // Delete the student
+    await Student.findByIdAndDelete(studentId);
+
     res.json({
       success: true,
-      message: 'Student deleted successfully'
+      message: force === 'true' ? 'Student and all related data deleted' : 'Student deleted successfully'
     });
   } catch (error) {
     next(error);

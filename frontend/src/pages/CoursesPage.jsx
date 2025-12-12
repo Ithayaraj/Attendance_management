@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { Plus, Trash2, Edit } from 'lucide-react';
+import { Plus, Trash2, Edit, Eye } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { useAuth } from '../hooks/useAuth';
 import { LoadingSpinner } from '../components/LoadingSpinner';
@@ -18,12 +18,38 @@ export const CoursesPage = () => {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ code: '', name: '', department: '', credits: 3 });
   const [batches, setBatches] = useState([]);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingCourse, setViewingCourse] = useState(null);
+
+  // Modal states
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalData, setConfirmModalData] = useState({
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    onConfirm: () => {},
+    type: 'warning' // 'warning', 'danger', 'info'
+  });
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState(null);
   const hasLoadedRef = useRef(false);
 
   const BATCHES_CACHE_KEY = 'courses_batches_cache';
   const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  // Helper function to show confirmation modal
+  const showConfirmation = (title, message, onConfirm, type = 'warning', confirmText = 'Confirm', cancelText = 'Cancel') => {
+    setConfirmModalData({
+      title,
+      message,
+      confirmText,
+      cancelText,
+      onConfirm,
+      type
+    });
+    setShowConfirmModal(true);
+  };
 
   // Faculty and Department structure
   const facultyStructure = {
@@ -213,12 +239,24 @@ export const CoursesPage = () => {
 
   const openCreate = () => {
     if (!selectedBatch) {
-      showWarning('Please select a batch before creating a course');
+      showConfirmation(
+        'No Batch Selected',
+        'Please select a batch before creating a course.',
+        () => {},
+        'warning',
+        'OK',
+        ''
+      );
       return;
     }
     setEditing(null);
     setForm({ code: '', name: '', department: selectedBatch.department, credits: 3 });
     setShowModal(true);
+  };
+
+  const openView = (c) => {
+    setViewingCourse(c);
+    setShowViewModal(true);
   };
 
   const openEdit = (c) => {
@@ -256,20 +294,59 @@ export const CoursesPage = () => {
   };
 
   const remove = async (id) => {
-    if (!confirm('Delete this course?')) return;
-    try {
-      await apiClient.delete(`/api/courses/${id}`);
-      // Clear cache and reload
-      if (selectedBatch) {
-        const cacheKey = `${CACHE_KEY}_${selectedBatch._id}`;
-        sessionStorage.removeItem(cacheKey);
+    const attemptDelete = async (forceDelete = false) => {
+      try {
+        const url = forceDelete ? `/api/courses/${id}?force=true` : `/api/courses/${id}`;
+        await apiClient.delete(url);
+        
+        // Clear cache and reload
+        if (selectedBatch) {
+          const cacheKey = `${CACHE_KEY}_${selectedBatch._id}`;
+          sessionStorage.removeItem(cacheKey);
+        }
+        hasLoadedRef.current = false;
+        showSuccess('Course deleted successfully!');
+        await load();
+      } catch (e) {
+        if (e.response?.status === 409 && e.response?.data?.requiresForceDelete) {
+          // Course has related data, show force delete confirmation
+          const relatedData = e.response.data.relatedData;
+          const dataDetails = [];
+          
+          if (relatedData.sessions > 0) {
+            dataDetails.push(`${relatedData.sessions} session${relatedData.sessions !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.enrollments > 0) {
+            dataDetails.push(`${relatedData.enrollments} enrollment${relatedData.enrollments !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.scanRecords > 0) {
+            dataDetails.push(`${relatedData.scanRecords} scan record${relatedData.scanRecords !== 1 ? 's' : ''}`);
+          }
+
+          const message = `This course has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+
+          showConfirmation(
+            'Force Delete Required',
+            message,
+            () => attemptDelete(true),
+            'danger',
+            'Delete All',
+            'Cancel'
+          );
+        } else {
+          showError(e.message || 'Failed to delete course', 'Delete Failed');
+        }
       }
-      hasLoadedRef.current = false;
-      showSuccess('Course deleted successfully!');
-      await load();
-    } catch (e) {
-      showError(e.message || 'Failed to delete course', 'Delete Failed');
-    }
+    };
+
+    showConfirmation(
+      'Delete Course',
+      'Are you sure you want to delete this course? This action cannot be undone.',
+      () => attemptDelete(false),
+      'danger',
+      'Delete',
+      'Cancel'
+    );
   };
 
   return (
@@ -383,6 +460,7 @@ export const CoursesPage = () => {
                       <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{getCreditsFromCode(c.code)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => openView(c)} className="p-2 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded-lg" title="View"><Eye className="w-4 h-4" /></button>
                           <button onClick={() => openEdit(c)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
                           <button onClick={() => remove(c._id)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
                         </div>
@@ -449,6 +527,152 @@ export const CoursesPage = () => {
                 <button type="submit" className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all text-sm order-1 sm:order-2">{editing ? 'Update' : 'Create'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Course Modal */}
+      {showViewModal && viewingCourse && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-2xl w-full overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Course Details</h3>
+              <button onClick={() => setShowViewModal(false)} className="text-slate-500 hover:text-slate-700">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Course Code</label>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{viewingCourse.code}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Course Name</label>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">{viewingCourse.name}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Faculty</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {getFacultyFromDepartment(viewingCourse.department)?.replace('Faculty of ', '') || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Department</label>
+                  <p className="text-base text-slate-900 dark:text-white">{viewingCourse.department || 'N/A'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Year</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {getYearSemesterFromCode(viewingCourse.code)?.year ?? 'N/A'}
+                    {getYearSemesterFromCode(viewingCourse.code)?.year ? 
+                      (getYearSemesterFromCode(viewingCourse.code).year === 1 ? 'st' : 
+                       getYearSemesterFromCode(viewingCourse.code).year === 2 ? 'nd' : 
+                       getYearSemesterFromCode(viewingCourse.code).year === 3 ? 'rd' : 'th') + ' Year' : ''}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Semester</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {getYearSemesterFromCode(viewingCourse.code)?.semester ?? 'N/A'}
+                    {getYearSemesterFromCode(viewingCourse.code)?.semester ? 
+                      (getYearSemesterFromCode(viewingCourse.code).semester === 1 ? 'st' : 'nd') + ' Semester' : ''}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Credits</label>
+                  <p className="text-base text-slate-900 dark:text-white">{getCreditsFromCode(viewingCourse.code)}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Created Date</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {viewingCourse.createdAt ? new Date(viewingCourse.createdAt).toLocaleDateString() : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-5 pt-0 border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  openEdit(viewingCourse);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Course
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+            <div className={`p-5 border-b border-slate-200 dark:border-slate-700 ${
+              confirmModalData.type === 'danger' ? 'bg-red-50 dark:bg-red-900/20' :
+              confirmModalData.type === 'warning' ? 'bg-amber-50 dark:bg-amber-900/20' :
+              'bg-blue-50 dark:bg-blue-900/20'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  confirmModalData.type === 'danger' ? 'bg-red-100 dark:bg-red-900/40' :
+                  confirmModalData.type === 'warning' ? 'bg-amber-100 dark:bg-amber-900/40' :
+                  'bg-blue-100 dark:bg-blue-900/40'
+                }`}>
+                  {confirmModalData.type === 'danger' ? (
+                    <span className="text-red-600 dark:text-red-400 text-lg font-bold">✕</span>
+                  ) : confirmModalData.type === 'warning' ? (
+                    <span className="text-amber-600 dark:text-amber-400 text-lg font-bold">!</span>
+                  ) : (
+                    <span className="text-blue-600 dark:text-blue-400 text-lg font-bold">i</span>
+                  )}
+                </div>
+                <h3 className={`text-lg font-semibold ${
+                  confirmModalData.type === 'danger' ? 'text-red-900 dark:text-red-100' :
+                  confirmModalData.type === 'warning' ? 'text-amber-900 dark:text-amber-100' :
+                  'text-blue-900 dark:text-blue-100'
+                }`}>
+                  {confirmModalData.title}
+                </h3>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line">
+                {confirmModalData.message}
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 p-5 pt-0">
+              {confirmModalData.cancelText && (
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  {confirmModalData.cancelText}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  confirmModalData.onConfirm();
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  confirmModalData.type === 'danger' 
+                    ? 'bg-red-600 hover:bg-red-700 text-white' 
+                    : confirmModalData.type === 'warning'
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {confirmModalData.confirmText}
+              </button>
+            </div>
           </div>
         </div>
       )}

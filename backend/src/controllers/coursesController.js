@@ -116,8 +116,10 @@ export const updateCourse = async (req, res, next) => {
 
 export const deleteCourse = async (req, res, next) => {
   try {
-    const course = await Course.findByIdAndDelete(req.params.id);
+    const { force } = req.query;
+    const courseId = req.params.id;
 
+    const course = await Course.findById(courseId);
     if (!course) {
       return res.status(404).json({
         success: false,
@@ -125,9 +127,64 @@ export const deleteCourse = async (req, res, next) => {
       });
     }
 
+    // Check if there are related records
+    const [sessionCount, enrollmentCount, scanCount] = await Promise.all([
+      (await import('../models/ClassSession.js')).ClassSession.countDocuments({ courseId }),
+      (await import('../models/Enrollment.js')).Enrollment.countDocuments({ courseId }),
+      (await import('../models/Scan.js')).Scan.countDocuments({ courseId })
+    ]);
+
+    const hasRelatedData = sessionCount > 0 || enrollmentCount > 0 || scanCount > 0;
+
+    // If there's related data and force is not specified, return conflict
+    if (hasRelatedData && force !== 'true') {
+      return res.status(409).json({
+        success: false,
+        message: 'Course has related data',
+        relatedData: {
+          sessions: sessionCount,
+          enrollments: enrollmentCount,
+          scanRecords: scanCount
+        },
+        requiresForceDelete: true
+      });
+    }
+
+    // If force delete is requested, delete all related data
+    if (force === 'true') {
+      const { ClassSession } = await import('../models/ClassSession.js');
+      const { Enrollment } = await import('../models/Enrollment.js');
+      const { Scan } = await import('../models/Scan.js');
+      const { AttendanceRecord } = await import('../models/AttendanceRecord.js');
+      const { Device } = await import('../models/Device.js');
+
+      // Get all session IDs for this course to clean up attendance records and devices
+      const sessions = await ClassSession.find({ courseId }, '_id');
+      const sessionIds = sessions.map(s => s._id);
+
+      await Promise.all([
+        // Delete sessions
+        ClassSession.deleteMany({ courseId }),
+        // Delete enrollments
+        Enrollment.deleteMany({ courseId }),
+        // Delete scan records
+        Scan.deleteMany({ courseId }),
+        // Delete attendance records for sessions of this course
+        sessionIds.length > 0 ? AttendanceRecord.deleteMany({ sessionId: { $in: sessionIds } }) : Promise.resolve(),
+        // Clear activeSessionId from devices that were using sessions of this course
+        sessionIds.length > 0 ? Device.updateMany(
+          { activeSessionId: { $in: sessionIds } },
+          { $unset: { activeSessionId: 1 } }
+        ) : Promise.resolve()
+      ]);
+    }
+
+    // Delete the course
+    await Course.findByIdAndDelete(courseId);
+
     res.json({
       success: true,
-      message: 'Course deleted successfully'
+      message: force === 'true' ? 'Course and all related data deleted' : 'Course deleted successfully'
     });
   } catch (error) {
     next(error);

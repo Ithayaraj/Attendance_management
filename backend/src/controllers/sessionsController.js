@@ -103,7 +103,7 @@ export const createSession = async (req, res, next) => {
       } else {
         return res.status(400).json({
           success: false,
-          message: `Course "${course.code}" is missing year and semester information. Cannot derive from course code. Please update the course manually to include year (1-4) and semester (1-2) values.`
+          message: `Course "${course.code}" missing year/semester info. Update course first.`
         });
       }
     }
@@ -112,39 +112,56 @@ export const createSession = async (req, res, next) => {
     if (year === null || year === undefined || year < 1 || year > 4) {
       return res.status(400).json({
         success: false,
-        message: `Invalid year value: ${year}. Year must be between 1 and 4. Please update the course to set a valid year.`
+        message: `Invalid year: ${year}. Must be 1-4.`
       });
     }
 
     if (semester === null || semester === undefined || semester < 1 || semester > 2) {
       return res.status(400).json({
         success: false,
-        message: `Invalid semester value: ${semester}. Semester must be 1 or 2. Please update the course to set a valid semester.`
+        message: `Invalid semester: ${semester}. Must be 1 or 2.`
       });
     }
 
-    // Check if there's any active (live or scheduled) session for this batch
+    // Check for time conflicts with other sessions for the same batch on the same date
     // A batch is defined by department + year + semester
-    // Each batch can only have one active session at a time
-    console.log(`Checking for active sessions for ${course.department} Y${year}S${semester}`);
+    console.log(`Checking for time conflicts for ${course.department} Y${year}S${semester} on ${date}`);
     
-    const activeSession = await ClassSession.findOne({
+    const timeConflict = await ClassSession.findOne({
       department: course.department,
       year: year,
       semester: semester,
+      date: date, // Only check sessions on the same date
       status: { $in: ['live', 'scheduled'] },
-      _id: { $ne: req.body.sessionId } // Exclude current session if updating
+      _id: { $ne: req.body.sessionId }, // Exclude current session if updating
+      $or: [
+        // New session starts during existing session
+        { $and: [
+          { startTime: { $lte: startTime } },
+          { endTime: { $gt: startTime } }
+        ]},
+        // New session ends during existing session
+        { $and: [
+          { startTime: { $lt: endTime } },
+          { endTime: { $gte: endTime } }
+        ]},
+        // New session completely contains existing session
+        { $and: [
+          { startTime: { $gte: startTime } },
+          { endTime: { $lte: endTime } }
+        ]}
+      ]
     }).populate('courseId');
 
-    if (activeSession) {
-      console.log(`Active session found for same batch: ${activeSession.courseId.code} (${activeSession.status}) on ${activeSession.date}`);
+    if (timeConflict) {
+      console.log(`Time conflict found for same batch: ${timeConflict.courseId.code} (${timeConflict.status}) on ${timeConflict.date} from ${timeConflict.startTime} to ${timeConflict.endTime}`);
       return res.status(400).json({
         success: false,
-        message: `Cannot create session. ${course.department} (Year ${year}, Semester ${semester}) already has an active session (${activeSession.courseId.code}) with status "${activeSession.status}" on ${activeSession.date}. Please close the existing session before creating a new one.`
+        message: `Time conflict: ${timeConflict.courseId.code} already scheduled ${timeConflict.startTime}-${timeConflict.endTime} on ${date}.`
       });
     }
     
-    console.log(`No active sessions found for this batch`);
+    console.log(`No time conflicts found for this batch on ${date}`);
 
     // Check for room conflicts (same room, same date, same department, overlapping time)
     // Different departments can use rooms with the same name (they're in different buildings)
@@ -176,7 +193,7 @@ export const createSession = async (req, res, next) => {
     if (roomConflict) {
       return res.status(400).json({
         success: false,
-        message: `Room "${room}" is already booked for ${course.department} on ${date} from ${roomConflict.startTime} to ${roomConflict.endTime} for ${roomConflict.courseId.code}. Please choose a different room or time.`
+        message: `Room "${room}" booked ${roomConflict.startTime}-${roomConflict.endTime} for ${roomConflict.courseId.code}.`
       });
     }
 
@@ -261,7 +278,7 @@ export const updateSessionStatus = async (req, res, next) => {
       if (existingLiveSession) {
         return res.status(400).json({
           success: false,
-          message: `Another session is already live for ${session.department} (Year ${session.year}, Semester ${session.semester}). Only one session can be live at a time for this batch.`
+          message: `Another session already live for Y${session.year}S${session.semester}. Close it first.`
         });
       }
     }
@@ -299,11 +316,63 @@ export const updateSession = async (req, res, next) => {
 
 export const deleteSession = async (req, res, next) => {
   try {
-    const session = await ClassSession.findByIdAndDelete(req.params.sessionId);
+    const { force } = req.query;
+    const sessionId = req.params.sessionId;
+
+    const session = await ClassSession.findById(sessionId);
     if (!session) {
       return res.status(404).json({ success: false, message: 'Session not found' });
     }
-    res.json({ success: true, message: 'Session deleted' });
+
+    // Check if there are related records
+    const [attendanceCount, scanCount, deviceCount] = await Promise.all([
+      (await import('../models/AttendanceRecord.js')).AttendanceRecord.countDocuments({ sessionId }),
+      (await import('../models/Scan.js')).Scan.countDocuments({ sessionId }),
+      (await import('../models/Device.js')).Device.countDocuments({ activeSessionId: sessionId })
+    ]);
+
+    const hasRelatedData = attendanceCount > 0 || scanCount > 0 || deviceCount > 0;
+
+    // If there's related data and force is not specified, return conflict
+    if (hasRelatedData && force !== 'true') {
+      return res.status(409).json({
+        success: false,
+        message: 'Session has related data',
+        relatedData: {
+          attendanceRecords: attendanceCount,
+          scanRecords: scanCount,
+          activeDevices: deviceCount
+        },
+        requiresForceDelete: true
+      });
+    }
+
+    // If force delete is requested, delete all related data
+    if (force === 'true') {
+      const { AttendanceRecord } = await import('../models/AttendanceRecord.js');
+      const { Scan } = await import('../models/Scan.js');
+      const { Device } = await import('../models/Device.js');
+
+      await Promise.all([
+        // Delete attendance records
+        AttendanceRecord.deleteMany({ sessionId }),
+        // Delete scan records
+        Scan.deleteMany({ sessionId }),
+        // Clear activeSessionId from devices
+        Device.updateMany(
+          { activeSessionId: sessionId },
+          { $unset: { activeSessionId: 1 } }
+        )
+      ]);
+    }
+
+    // Delete the session
+    await ClassSession.findByIdAndDelete(sessionId);
+
+    res.json({ 
+      success: true, 
+      message: force === 'true' ? 'Session and all related data deleted' : 'Session deleted'
+    });
   } catch (error) {
     next(error);
   }

@@ -48,9 +48,162 @@ export const createBatch = async (req, res, next) => {
 
 export const deleteBatch = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    await Batch.findByIdAndDelete(id);
-    res.json({ success: true });
+    const { force } = req.query;
+    const batchId = req.params.id;
+
+    const batch = await Batch.findById(batchId);
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: 'Batch not found'
+      });
+    }
+
+    // Check if there are related records for this batch (department + year + semester)
+    const batchCriteria = {
+      department: batch.department,
+      year: batch.currentYear,
+      semester: batch.currentSemester
+    };
+
+    const [studentCount, courseCount, sessionCount] = await Promise.all([
+      Student.countDocuments(batchCriteria),
+      (await import('../models/Course.js')).Course.countDocuments(batchCriteria),
+      (await import('../models/ClassSession.js')).ClassSession.countDocuments(batchCriteria)
+    ]);
+
+    // Also count enrollments, attendance records, and scans
+    let enrollmentCount = 0;
+    let attendanceCount = 0;
+    let scanCount = 0;
+
+    if (studentCount > 0 || courseCount > 0 || sessionCount > 0) {
+      const students = await Student.find(batchCriteria, '_id');
+      const studentIds = students.map(s => s._id);
+      
+      const courses = await (await import('../models/Course.js')).Course.find(batchCriteria, '_id');
+      const courseIds = courses.map(c => c._id);
+      
+      const sessions = await (await import('../models/ClassSession.js')).ClassSession.find(batchCriteria, '_id');
+      const sessionIds = sessions.map(s => s._id);
+
+      [enrollmentCount, attendanceCount, scanCount] = await Promise.all([
+        studentIds.length > 0 || courseIds.length > 0 ? 
+          (await import('../models/Enrollment.js')).Enrollment.countDocuments({
+            $or: [
+              ...(studentIds.length > 0 ? [{ studentId: { $in: studentIds } }] : []),
+              ...(courseIds.length > 0 ? [{ courseId: { $in: courseIds } }] : [])
+            ]
+          }) : 0,
+        sessionIds.length > 0 || studentIds.length > 0 ? 
+          (await import('../models/AttendanceRecord.js')).AttendanceRecord.countDocuments({
+            $or: [
+              ...(sessionIds.length > 0 ? [{ sessionId: { $in: sessionIds } }] : []),
+              ...(studentIds.length > 0 ? [{ studentId: { $in: studentIds } }] : [])
+            ]
+          }) : 0,
+        sessionIds.length > 0 || courseIds.length > 0 ? 
+          (await import('../models/Scan.js')).Scan.countDocuments({
+            $or: [
+              ...(sessionIds.length > 0 ? [{ sessionId: { $in: sessionIds } }] : []),
+              ...(courseIds.length > 0 ? [{ courseId: { $in: courseIds } }] : [])
+            ]
+          }) : 0
+      ]);
+    }
+
+    const hasRelatedData = studentCount > 0 || courseCount > 0 || sessionCount > 0 || 
+                          enrollmentCount > 0 || attendanceCount > 0 || scanCount > 0;
+
+    // If there's related data and force is not specified, return conflict
+    if (hasRelatedData && force !== 'true') {
+      return res.status(409).json({
+        success: false,
+        message: 'Batch has related data',
+        relatedData: {
+          students: studentCount,
+          courses: courseCount,
+          sessions: sessionCount,
+          enrollments: enrollmentCount,
+          attendanceRecords: attendanceCount,
+          scanRecords: scanCount
+        },
+        batchInfo: {
+          department: batch.department,
+          year: batch.currentYear,
+          semester: batch.currentSemester
+        },
+        requiresForceDelete: true
+      });
+    }
+
+    // If force delete is requested, delete all related data
+    if (force === 'true') {
+      const { Course } = await import('../models/Course.js');
+      const { ClassSession } = await import('../models/ClassSession.js');
+      const { Enrollment } = await import('../models/Enrollment.js');
+      const { AttendanceRecord } = await import('../models/AttendanceRecord.js');
+      const { Scan } = await import('../models/Scan.js');
+      const { Device } = await import('../models/Device.js');
+
+      // Get all IDs for cascade deletion
+      const students = await Student.find(batchCriteria, '_id');
+      const studentIds = students.map(s => s._id);
+      
+      const courses = await Course.find(batchCriteria, '_id');
+      const courseIds = courses.map(c => c._id);
+      
+      const sessions = await ClassSession.find(batchCriteria, '_id');
+      const sessionIds = sessions.map(s => s._id);
+
+      // Delete all related data
+      await Promise.all([
+        // Delete students
+        Student.deleteMany(batchCriteria),
+        // Delete courses
+        Course.deleteMany(batchCriteria),
+        // Delete sessions
+        ClassSession.deleteMany(batchCriteria),
+        // Delete enrollments
+        studentIds.length > 0 || courseIds.length > 0 ? 
+          Enrollment.deleteMany({
+            $or: [
+              ...(studentIds.length > 0 ? [{ studentId: { $in: studentIds } }] : []),
+              ...(courseIds.length > 0 ? [{ courseId: { $in: courseIds } }] : [])
+            ]
+          }) : Promise.resolve(),
+        // Delete attendance records
+        sessionIds.length > 0 || studentIds.length > 0 ? 
+          AttendanceRecord.deleteMany({
+            $or: [
+              ...(sessionIds.length > 0 ? [{ sessionId: { $in: sessionIds } }] : []),
+              ...(studentIds.length > 0 ? [{ studentId: { $in: studentIds } }] : [])
+            ]
+          }) : Promise.resolve(),
+        // Delete scan records
+        sessionIds.length > 0 || courseIds.length > 0 ? 
+          Scan.deleteMany({
+            $or: [
+              ...(sessionIds.length > 0 ? [{ sessionId: { $in: sessionIds } }] : []),
+              ...(courseIds.length > 0 ? [{ courseId: { $in: courseIds } }] : [])
+            ]
+          }) : Promise.resolve(),
+        // Clear device references
+        sessionIds.length > 0 ? 
+          Device.updateMany(
+            { activeSessionId: { $in: sessionIds } },
+            { $unset: { activeSessionId: 1 } }
+          ) : Promise.resolve()
+      ]);
+    }
+
+    // Delete the batch
+    await Batch.findByIdAndDelete(batchId);
+
+    res.json({
+      success: true,
+      message: force === 'true' ? 'Batch and all related data deleted' : 'Batch deleted successfully'
+    });
   } catch (error) {
     next(error);
   }

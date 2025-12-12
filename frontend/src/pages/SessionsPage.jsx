@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Plus, RefreshCw, PlayCircle, XCircle, Edit, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Eye, Edit, Trash2 } from 'lucide-react';
 import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { CustomSelect } from '../components/CustomSelect';
@@ -26,9 +26,35 @@ export const SessionsPage = () => {
   const ITEMS_PER_PAGE = 10;
   const [batchActiveSessions, setBatchActiveSessions] = useState({});
   const [activeGlobalSessions, setActiveGlobalSessions] = useState([]);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewingSession, setViewingSession] = useState(null);
+
+  // Modal states
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalData, setConfirmModalData] = useState({
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    onConfirm: () => {},
+    type: 'warning' // 'warning', 'danger', 'info'
+  });
 
   const BATCHES_CACHE_KEY = 'sessions_batches_cache';
   const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  // Helper function to show confirmation modal
+  const showConfirmation = (title, message, onConfirm, type = 'warning', confirmText = 'Confirm', cancelText = 'Cancel') => {
+    setConfirmModalData({
+      title,
+      message,
+      confirmText,
+      cancelText,
+      onConfirm,
+      type
+    });
+    setShowConfirmModal(true);
+  };
 
   // Extract year and semester from course code
   const getYearSemesterFromCode = (code) => {
@@ -186,7 +212,7 @@ export const SessionsPage = () => {
       }));
     } catch (e) {
       console.error(e);
-      showError(e.message || 'Failed to load courses', 'Error Loading Courses');
+      showError(e.message || 'Failed to load courses');
     }
   };
 
@@ -248,7 +274,7 @@ export const SessionsPage = () => {
       }));
     } catch (e) {
       console.error(e);
-      showError(e.message || 'Failed to load sessions', 'Error Loading Sessions');
+      showError(e.message || 'Failed to load sessions');
     } finally {
       setLoading(false);
     }
@@ -630,14 +656,21 @@ export const SessionsPage = () => {
   const createSession = async (e) => {
     e.preventDefault();
     if (!selectedCourseId) {
-      showWarning('Please select a course first', 'Course Required');
+      showConfirmation(
+        'No Course Selected',
+        'Please select a course first.',
+        () => {},
+        'warning',
+        'OK',
+        ''
+      );
       return;
     }
 
     // Get the faculty/department of the selected course
     const selectedCourse = courses.find(c => c._id === selectedCourseId);
     if (!selectedCourse) {
-      showError('Selected course not found', 'Error');
+      showError('Course not found');
       return;
     }
 
@@ -659,10 +692,7 @@ export const SessionsPage = () => {
             courses.find(c => c._id === s.courseId)?.code;
           return `${courseCode || 'N/A'} (${s.startTime}-${s.endTime})`;
         }).join(', ');
-        showError(
-          `Room ${form.room} is already booked for ${selectedCourse.department} on ${form.date}. Conflicting sessions: ${conflictDetails}`,
-          'Room Conflict'
-        );
+        showError(`Room ${form.room} already booked on ${form.date}. Conflicts: ${conflictDetails}`);
         return;
       }
 
@@ -679,11 +709,31 @@ export const SessionsPage = () => {
       }
       setShowCreate(false);
       showSuccess('Session created successfully!', 'Success');
-      // Clear cache and reload
+      
+      // Clear all relevant caches to ensure fresh data
       sessionStorage.removeItem(`sessions_${selectedCourseId}`);
+      sessionStorage.removeItem(BATCHES_CACHE_KEY);
+      
+      // Refresh sessions and batch active sessions status
       await loadSessions(selectedCourseId);
+      await loadBatchActiveSessions(batches);
+      
+      // Also refresh courses to update the live indicators in dropdown
+      await loadCourses();
+      
+      // Reset form to defaults for next session
+      const nowRounded = roundToQuarter(new Date());
+      const startDefault = toTimeString(nowRounded);
+      const endDefault = addMinutesLocal(startDefault, 60);
+      setForm({
+        date: new Date().toISOString().slice(0, 10),
+        startTime: startDefault,
+        endTime: endDefault,
+        room: 'LAB-1',
+        goLive: false
+      });
     } catch (e) {
-      showError(e.message || 'Failed to create session', 'Creation Failed');
+      showError(e.message || 'Failed to create session');
     } finally {
       setCreating(false);
     }
@@ -693,12 +743,25 @@ export const SessionsPage = () => {
     try {
       await apiClient.patch(`/api/sessions/${sessionId}/status`, { status });
       showSuccess(`Session status updated to ${status}`, 'Status Updated');
-      // Clear cache and reload
+      
+      // Clear all relevant caches to ensure fresh data
       sessionStorage.removeItem(`sessions_${selectedCourseId}`);
+      sessionStorage.removeItem(BATCHES_CACHE_KEY);
+      
+      // Refresh sessions and batch active sessions status
       await loadSessions(selectedCourseId);
+      await loadBatchActiveSessions(batches);
+      
+      // Also refresh courses to update the live indicators in dropdown
+      await loadCourses();
     } catch (e) {
-      showError(e.message || 'Failed to update status', 'Update Failed');
+      showError(e.message || 'Failed to update status');
     }
+  };
+
+  const openView = (s) => {
+    setViewingSession(s);
+    setShowViewModal(true);
   };
 
   const openEdit = (s) => {
@@ -713,7 +776,7 @@ export const SessionsPage = () => {
     // Get the faculty/department of the session being edited
     const sessionCourse = courses.find(c => c._id === editing.courseId?._id);
     if (!sessionCourse) {
-      showError('Course not found for this session', 'Error');
+      showError('Course not found');
       return;
     }
 
@@ -735,10 +798,7 @@ export const SessionsPage = () => {
             courses.find(c => c._id === s.courseId)?.code;
           return `${courseCode || 'N/A'} (${s.startTime}-${s.endTime})`;
         }).join(', ');
-        showError(
-          `Room ${form.room} is already booked for ${sessionCourse.department} on ${form.date}. Conflicting sessions: ${conflictDetails}`,
-          'Room Conflict'
-        );
+        showError(`Room ${form.room} already booked on ${form.date}. Conflicts: ${conflictDetails}`);
         return;
       }
 
@@ -751,25 +811,79 @@ export const SessionsPage = () => {
       setShowEdit(false);
       setEditing(null);
       showSuccess('Session updated successfully!', 'Success');
-      // Clear cache and reload
+      
+      // Clear all relevant caches to ensure fresh data
       sessionStorage.removeItem(`sessions_${selectedCourseId}`);
+      sessionStorage.removeItem(BATCHES_CACHE_KEY);
+      
+      // Refresh sessions and batch active sessions status
       await loadSessions(selectedCourseId);
+      await loadBatchActiveSessions(batches);
+      
+      // Also refresh courses to update the live indicators in dropdown
+      await loadCourses();
     } catch (err) {
-      showError(err.message || 'Failed to update session', 'Update Failed');
+      showError(err.message || 'Failed to update session');
     }
   };
 
   const remove = async (s) => {
-    if (!confirm('Delete this session?')) return;
-    try {
-      await apiClient.delete(`/api/sessions/${s._id}`);
-      showSuccess('Session deleted successfully!', 'Success');
-      // Clear cache and reload
-      sessionStorage.removeItem(`sessions_${selectedCourseId}`);
-      await loadSessions(selectedCourseId);
-    } catch (err) {
-      showError(err.message || 'Failed to delete session', 'Delete Failed');
-    }
+    const attemptDelete = async (forceDelete = false) => {
+      try {
+        const url = forceDelete ? `/api/sessions/${s._id}?force=true` : `/api/sessions/${s._id}`;
+        await apiClient.delete(url);
+        showSuccess('Session deleted successfully!', 'Success');
+        
+        // Clear all relevant caches to ensure fresh data
+        sessionStorage.removeItem(`sessions_${selectedCourseId}`);
+        sessionStorage.removeItem(BATCHES_CACHE_KEY);
+        
+        // Refresh sessions and batch active sessions status
+        await loadSessions(selectedCourseId);
+        await loadBatchActiveSessions(batches);
+        
+        // Also refresh courses to update the live indicators in dropdown
+        await loadCourses();
+      } catch (err) {
+        if (err.response?.status === 409 && err.response?.data?.requiresForceDelete) {
+          // Session has related data, show force delete confirmation
+          const relatedData = err.response.data.relatedData;
+          const dataDetails = [];
+          
+          if (relatedData.attendanceRecords > 0) {
+            dataDetails.push(`${relatedData.attendanceRecords} attendance record${relatedData.attendanceRecords !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.scanRecords > 0) {
+            dataDetails.push(`${relatedData.scanRecords} scan record${relatedData.scanRecords !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.activeDevices > 0) {
+            dataDetails.push(`${relatedData.activeDevices} active device${relatedData.activeDevices !== 1 ? 's' : ''}`);
+          }
+
+          const message = `This session has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+
+          showConfirmation(
+            'Force Delete Required',
+            message,
+            () => attemptDelete(true),
+            'danger',
+            'Delete All',
+            'Cancel'
+          );
+        } else {
+          showError(err.message || 'Failed to delete session');
+        }
+      }
+    };
+
+    showConfirmation(
+      'Delete Session',
+      'Delete this session? This cannot be undone.',
+      () => attemptDelete(false),
+      'danger',
+      'Delete',
+      'Cancel'
+    );
   };
 
   // specific course active status helper
@@ -875,7 +989,24 @@ export const SessionsPage = () => {
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
             <button
-              onClick={() => selectedCourseId ? loadSessions(selectedCourseId) : loadAllCourseSessions()}
+              onClick={async () => {
+                // Clear all relevant caches
+                if (selectedCourseId) {
+                  sessionStorage.removeItem(`sessions_${selectedCourseId}`);
+                }
+                sessionStorage.removeItem(BATCHES_CACHE_KEY);
+                
+                // Refresh data
+                if (selectedCourseId) {
+                  await loadSessions(selectedCourseId);
+                } else {
+                  await loadAllCourseSessions();
+                }
+                await loadBatchActiveSessions(batches);
+                
+                // Also refresh courses to update the live indicators in dropdown
+                await loadCourses();
+              }}
               disabled={!selectedBatch}
               className="w-full sm:w-auto px-3 sm:px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
@@ -977,8 +1108,7 @@ export const SessionsPage = () => {
                       {selectedCourseId && (
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => setStatus(s._id, 'live')} className="p-2 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg" title="Set Live"><PlayCircle className="w-4 h-4" /></button>
-                            <button onClick={() => setStatus(s._id, 'closed')} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Close"><XCircle className="w-4 h-4" /></button>
+                            <button onClick={() => openView(s)} className="p-2 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded-lg" title="View"><Eye className="w-4 h-4" /></button>
                             <button onClick={() => openEdit(s)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
                             <button onClick={() => remove(s)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
                           </div>
@@ -1123,6 +1253,168 @@ export const SessionsPage = () => {
                 <button type="submit" disabled={creating} className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all text-sm order-1 sm:order-2">Save</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Session Modal */}
+      {showViewModal && viewingSession && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-2xl w-full overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Session Details</h3>
+              <button onClick={() => setShowViewModal(false)} className="text-slate-500 hover:text-slate-700">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Course</label>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {viewingSession.courseId?.code || 'N/A'}
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    {viewingSession.courseId?.name || 'Course name not available'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Status</label>
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                    viewingSession.status === 'live' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 
+                    viewingSession.status === 'scheduled' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 
+                    'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                  }`}>
+                    {viewingSession.status}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Date</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {new Date(viewingSession.date).toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Time</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {viewingSession.startTime} - {viewingSession.endTime}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Room</label>
+                  <p className="text-base text-slate-900 dark:text-white">{viewingSession.room}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Batch</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {viewingSession.year && viewingSession.semester ? (
+                      `Year ${viewingSession.year}, Semester ${viewingSession.semester}`
+                    ) : (
+                      <span className="text-red-600 dark:text-red-400">⚠️ Missing batch info</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Department</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {viewingSession.courseId?.department || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Created</label>
+                  <p className="text-base text-slate-900 dark:text-white">
+                    {viewingSession.createdAt ? new Date(viewingSession.createdAt).toLocaleDateString() : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-5 pt-0 border-t border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => setShowViewModal(false)}
+                className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  openEdit(viewingSession);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+            <div className={`p-5 border-b border-slate-200 dark:border-slate-700 ${
+              confirmModalData.type === 'danger' ? 'bg-red-50 dark:bg-red-900/20' :
+              confirmModalData.type === 'warning' ? 'bg-amber-50 dark:bg-amber-900/20' :
+              'bg-blue-50 dark:bg-blue-900/20'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  confirmModalData.type === 'danger' ? 'bg-red-100 dark:bg-red-900/40' :
+                  confirmModalData.type === 'warning' ? 'bg-amber-100 dark:bg-amber-900/40' :
+                  'bg-blue-100 dark:bg-blue-900/40'
+                }`}>
+                  {confirmModalData.type === 'danger' ? (
+                    <span className="text-red-600 dark:text-red-400 text-lg font-bold">✕</span>
+                  ) : confirmModalData.type === 'warning' ? (
+                    <span className="text-amber-600 dark:text-amber-400 text-lg font-bold">!</span>
+                  ) : (
+                    <span className="text-blue-600 dark:text-blue-400 text-lg font-bold">i</span>
+                  )}
+                </div>
+                <h3 className={`text-lg font-semibold ${
+                  confirmModalData.type === 'danger' ? 'text-red-900 dark:text-red-100' :
+                  confirmModalData.type === 'warning' ? 'text-amber-900 dark:text-amber-100' :
+                  'text-blue-900 dark:text-blue-100'
+                }`}>
+                  {confirmModalData.title}
+                </h3>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line">
+                {confirmModalData.message}
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 p-5 pt-0">
+              {confirmModalData.cancelText && (
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  {confirmModalData.cancelText}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  confirmModalData.onConfirm();
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  confirmModalData.type === 'danger' 
+                    ? 'bg-red-600 hover:bg-red-700 text-white' 
+                    : confirmModalData.type === 'warning'
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {confirmModalData.confirmText}
+              </button>
+            </div>
           </div>
         </div>
       )}

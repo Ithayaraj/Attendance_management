@@ -4,6 +4,7 @@ import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { CustomSelect } from '../components/CustomSelect';
 import { useNotification } from '../contexts/NotificationContext';
+import * as XLSX from 'xlsx-js-style';
 
 export const StudentsPage = ({ onViewStudent }) => {
   const { showSuccess, showError, showWarning } = useNotification();
@@ -26,6 +27,17 @@ export const StudentsPage = ({ onViewStudent }) => {
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+
+  // Modal states
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalData, setConfirmModalData] = useState({
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    onConfirm: () => {},
+    type: 'warning' // 'warning', 'danger', 'info'
+  });
 
   const [formData, setFormData] = useState({
     registrationNo: '',
@@ -92,6 +104,19 @@ export const StudentsPage = ({ onViewStudent }) => {
 
   const BATCHES_CACHE_KEY = 'students_batches_cache';
   const BATCHES_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  // Helper function to show confirmation modal
+  const showConfirmation = (title, message, onConfirm, type = 'warning', confirmText = 'Confirm', cancelText = 'Cancel') => {
+    setConfirmModalData({
+      title,
+      message,
+      confirmText,
+      cancelText,
+      onConfirm,
+      type
+    });
+    setShowConfirmModal(true);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -285,9 +310,39 @@ export const StudentsPage = ({ onViewStudent }) => {
     try {
       const payload = { ...formData };
       if (!editingStudent) {
-        if (!selectedBatch) { showWarning('Please select a batch'); return; }
-        if (!regPrefix) { showWarning('Please complete registration number prefix'); return; }
-        if (!regSuffix) { showWarning('Please enter registration number suffix'); return; }
+        if (!selectedBatch) { 
+          showConfirmation(
+            'No Batch Selected',
+            'Please select a batch before adding a student.',
+            () => {},
+            'warning',
+            'OK',
+            ''
+          );
+          return; 
+        }
+        if (!regPrefix) { 
+          showConfirmation(
+            'Incomplete Registration Prefix',
+            'Please complete registration number prefix by selecting a valid batch.',
+            () => {},
+            'warning',
+            'OK',
+            ''
+          );
+          return; 
+        }
+        if (!regSuffix) { 
+          showConfirmation(
+            'Missing Registration Suffix',
+            'Please enter registration number suffix.',
+            () => {},
+            'warning',
+            'OK',
+            ''
+          );
+          return; 
+        }
         payload.registrationNo = `${regPrefix}${regSuffix}`;
         payload.department = selectedBatch.department;
         payload.year = selectedBatch.currentYear;
@@ -339,9 +394,82 @@ export const StudentsPage = ({ onViewStudent }) => {
   };
 
   const handleDelete = async (id) => {
-    if (confirm('Are you sure you want to delete this student?')) {
+    const attemptDelete = async (forceDelete = false) => {
       try {
-        await apiClient.delete(`/api/students/${id}`);
+        const url = forceDelete ? `/api/students/${id}?force=true` : `/api/students/${id}`;
+        await apiClient.delete(url);
+        
+        // Clear cache and reload
+        if (selectedBatch) {
+          const cacheKey = `students_cache_${selectedBatch._id}`;
+          sessionStorage.removeItem(cacheKey);
+        }
+        await reloadStudents();
+        showSuccess('Student deleted successfully!');
+      } catch (error) {
+        if (error.response?.status === 409 && error.response?.data?.requiresForceDelete) {
+          // Student has related data, show force delete confirmation
+          const relatedData = error.response.data.relatedData;
+          const dataDetails = [];
+          
+          if (relatedData.enrollments > 0) {
+            dataDetails.push(`${relatedData.enrollments} enrollment${relatedData.enrollments !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.attendanceRecords > 0) {
+            dataDetails.push(`${relatedData.attendanceRecords} attendance record${relatedData.attendanceRecords !== 1 ? 's' : ''}`);
+          }
+
+          const message = `This student has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+
+          showConfirmation(
+            'Force Delete Required',
+            message,
+            () => attemptDelete(true),
+            'danger',
+            'Delete All',
+            'Cancel'
+          );
+        } else {
+          showError(error.message || 'Failed to delete student', 'Delete Error');
+        }
+      }
+    };
+
+    showConfirmation(
+      'Delete Student',
+      'Are you sure you want to delete this student? This action cannot be undone.',
+      () => attemptDelete(false),
+      'danger',
+      'Delete',
+      'Cancel'
+    );
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedStudents.length === 0) {
+      showConfirmation(
+        'No Students Selected',
+        'Please select students to delete.',
+        () => {},
+        'warning',
+        'OK',
+        ''
+      );
+      return;
+    }
+
+    const attemptBulkDelete = async (forceDelete = false) => {
+      try {
+        // Delete all selected students
+        const deletePromises = selectedStudents.map(id => {
+          const url = forceDelete ? `/api/students/${id}?force=true` : `/api/students/${id}`;
+          return apiClient.delete(url);
+        });
+        
+        await Promise.all(deletePromises);
+        showSuccess(`Successfully deleted ${selectedStudents.length} student(s)!`);
+        setSelectedStudents([]);
+        
         // Clear cache and reload
         if (selectedBatch) {
           const cacheKey = `students_cache_${selectedBatch._id}`;
@@ -349,39 +477,32 @@ export const StudentsPage = ({ onViewStudent }) => {
         }
         await reloadStudents();
       } catch (error) {
-        showError(error.message || 'Failed to delete student', 'Delete Error');
+        if (error.response?.status === 409 && error.response?.data?.requiresForceDelete) {
+          // Some students have related data, show force delete confirmation
+          const message = `Some students have related data (enrollments, attendance records) that will also be deleted.\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+
+          showConfirmation(
+            'Force Delete Required',
+            message,
+            () => attemptBulkDelete(true),
+            'danger',
+            'Delete All',
+            'Cancel'
+          );
+        } else {
+          showError(error.message || 'Failed to delete students', 'Delete Error');
+        }
       }
-    }
-  };
+    };
 
-  const handleBulkDelete = async () => {
-    if (selectedStudents.length === 0) {
-      showWarning('Please select students to delete');
-      return;
-    }
-
-    const confirmMsg = `Are you sure you want to delete ${selectedStudents.length} student(s)? This action cannot be undone.`;
-    if (!confirm(confirmMsg)) return;
-
-    try {
-      // Delete all selected students
-      const deletePromises = selectedStudents.map(id => 
-        apiClient.delete(`/api/students/${id}`)
-      );
-      
-      await Promise.all(deletePromises);
-      showSuccess(`Successfully deleted ${selectedStudents.length} student(s)!`);
-      setSelectedStudents([]);
-      
-      // Clear cache and reload
-      if (selectedBatch) {
-        const cacheKey = `students_cache_${selectedBatch._id}`;
-        sessionStorage.removeItem(cacheKey);
-      }
-      await reloadStudents();
-    } catch (error) {
-      showError(error.message || 'Failed to delete students', 'Delete Error');
-    }
+    showConfirmation(
+      'Delete Multiple Students',
+      `Are you sure you want to delete ${selectedStudents.length} student(s)? This action cannot be undone.`,
+      () => attemptBulkDelete(false),
+      'danger',
+      'Delete All',
+      'Cancel'
+    );
   };
 
   const toggleSelectStudent = (id) => {
@@ -402,7 +523,14 @@ export const StudentsPage = ({ onViewStudent }) => {
     e.preventDefault();
     
     if (!bulkEditData.year && !bulkEditData.semester) {
-      showWarning('Please select at least Year or Semester to update');
+      showConfirmation(
+        'No Fields Selected',
+        'Please select at least Year or Semester to update.',
+        () => {},
+        'warning',
+        'OK',
+        ''
+      );
       return;
     }
 
@@ -410,7 +538,19 @@ export const StudentsPage = ({ onViewStudent }) => {
       (bulkEditData.year ? `Year will be set to: ${bulkEditData.year}\n` : '') +
       (bulkEditData.semester ? `Semester will be set to: ${bulkEditData.semester}` : '');
 
-    if (!confirm(confirmMsg)) return;
+    showConfirmation(
+      'Bulk Update Students',
+      confirmMsg,
+      async () => {
+        await performBulkEdit();
+      },
+      'warning',
+      'Update All',
+      'Cancel'
+    );
+  };
+
+  const performBulkEdit = async () => {
 
     try {
       setBulkEditLoading(true);
@@ -448,45 +588,200 @@ export const StudentsPage = ({ onViewStudent }) => {
 
   const handleExportCSV = () => {
     if (students.length === 0) {
-      showWarning('No students to export');
+      showConfirmation(
+        'No Students to Export',
+        'There are no students to export. Please select a batch with students first.',
+        () => {},
+        'info',
+        'OK',
+        ''
+      );
       return;
     }
 
-    // Create CSV content (without year and semester as they come from batch)
-    const headers = ['registrationNo', 'name', 'email', 'phone', 'address'];
-    const csvContent = [
-      headers.join(','),
-      ...students.map(student => 
-        headers.map(header => {
-          const value = student[header] || '';
-          // Escape commas and quotes in values
-          return `"${String(value).replace(/"/g, '""')}"`;
-        }).join(',')
-      )
-    ].join('\n');
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const wsData = [];
 
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `students_${selectedBatch.startYear}_${selectedBatch.department}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Add header rows (centered across all columns)
+    wsData.push(['']);
+    wsData.push(['UNIVERSITY OF VAVUNIYA']);
+    wsData.push([`${selectedBatch.startYear} BATCH - STUDENT LIST`]);
+    wsData.push(['Faculty of Technological Studies']);
+    wsData.push([`Department of ${selectedBatch.department}`]);
+    wsData.push([`${selectedBatch.currentYear}${selectedBatch.currentYear === 1 ? 'st' : selectedBatch.currentYear === 2 ? 'nd' : selectedBatch.currentYear === 3 ? 'rd' : 'th'} Year - ${selectedBatch.currentSemester}${selectedBatch.currentSemester === 1 ? 'st' : selectedBatch.currentSemester === 2 ? 'nd' : 'rd'} Semester`]);
+    wsData.push(['']);
+    wsData.push([`Total Students: ${students.length}`]);
+    wsData.push([`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`]);
+    wsData.push(['']);
+    wsData.push(['═'.repeat(100)]);
+    wsData.push(['']);
+
+    const headerRowIndex = wsData.length;
+    
+    // Add table headers
+    const tableHeaders = ['Registration No', 'Student Name', 'Email', 'Phone', 'Address'];
+    wsData.push(tableHeaders);
+    
+    // Add student rows
+    students.forEach(student => {
+      wsData.push([
+        student.registrationNo,
+        student.name,
+        student.email || '',
+        student.phone || '',
+        student.address || ''
+      ]);
+    });
+
+    // Create worksheet
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Set column widths
+    const colWidths = [
+      { wch: 20 }, // Registration No
+      { wch: 30 }, // Student Name
+      { wch: 35 }, // Email
+      { wch: 15 }, // Phone
+      { wch: 40 }  // Address
+    ];
+    ws['!cols'] = colWidths;
+
+    // Merge cells for header rows to center them across all columns
+    if (!ws['!merges']) ws['!merges'] = [];
+    for (let i = 0; i < headerRowIndex; i++) {
+      ws['!merges'].push({
+        s: { r: i, c: 0 },
+        e: { r: i, c: 4 }
+      });
+    }
+
+    // Apply cell styles
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[cellAddress]) continue;
+        
+        // Initialize cell object if it's just a value
+        if (typeof ws[cellAddress] !== 'object') {
+          ws[cellAddress] = { v: ws[cellAddress], t: 's' };
+        }
+        
+        // Initialize style object
+        if (!ws[cellAddress].s) {
+          ws[cellAddress].s = {};
+        }
+        
+        // Header rows (before table) - Bold and Centered
+        if (R < headerRowIndex) {
+          ws[cellAddress].s = {
+            font: { bold: true, sz: 12 },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+            border: {}
+          };
+        }
+        
+        // Table header row - Bold, Centered, with background
+        else if (R === headerRowIndex) {
+          ws[cellAddress].s = {
+            font: { bold: true, sz: 11 },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+            fill: { patternType: 'solid', fgColor: { rgb: 'E2E8F0' } },
+            border: {
+              top: { style: 'thin', color: { rgb: '000000' } },
+              bottom: { style: 'thin', color: { rgb: '000000' } },
+              left: { style: 'thin', color: { rgb: '000000' } },
+              right: { style: 'thin', color: { rgb: '000000' } }
+            }
+          };
+        }
+        
+        // Registration number column - Bold
+        else if (R > headerRowIndex && C === 0) {
+          ws[cellAddress].s = {
+            font: { bold: true, sz: 10 },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+            }
+          };
+        }
+        
+        // Student name column - Bold
+        else if (R > headerRowIndex && C === 1) {
+          ws[cellAddress].s = {
+            font: { bold: true, sz: 10 },
+            alignment: { horizontal: 'left', vertical: 'center' },
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+            }
+          };
+        }
+        
+        // Other data cells - Normal
+        else if (R > headerRowIndex) {
+          ws[cellAddress].s = {
+            font: { sz: 10 },
+            alignment: { horizontal: C === 2 ? 'left' : 'center', vertical: 'center' }, // Email left-aligned, others centered
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+            }
+          };
+        }
+      }
+    }
+
+    // Set row heights for better appearance
+    if (!ws['!rows']) ws['!rows'] = [];
+    for (let i = 0; i < headerRowIndex; i++) {
+      ws['!rows'][i] = { hpt: 18 };
+    }
+    ws['!rows'][headerRowIndex] = { hpt: 20 }; // Table header row
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Student List');
+
+    // Generate file name
+    const fileName = `${selectedBatch.startYear}_${selectedBatch.department}_Students_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    // Write file
+    XLSX.writeFile(wb, fileName);
   };
 
   const handleImportCSV = async (e) => {
     e.preventDefault();
     
     if (!importFile) {
-      showWarning('Please select a file');
+      showConfirmation(
+        'No File Selected',
+        'Please select a CSV file to import.',
+        () => {},
+        'warning',
+        'OK',
+        ''
+      );
       return;
     }
 
     if (!selectedBatch) {
-      showWarning('Please select a batch first');
+      showConfirmation(
+        'No Batch Selected',
+        'Please select a batch first before importing students.',
+        () => {},
+        'warning',
+        'OK',
+        ''
+      );
       return;
     }
 
@@ -498,18 +793,32 @@ export const StudentsPage = ({ onViewStudent }) => {
       const lines = text.split('\n').filter(line => line.trim());
       
       if (lines.length < 2) {
-        showError('CSV file is empty or invalid', 'Invalid File');
+        showConfirmation(
+          'Invalid File',
+          'CSV file is empty or invalid. Please check your file and try again.',
+          () => {},
+          'danger',
+          'OK',
+          ''
+        );
         return;
       }
 
       // Parse CSV
       const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-      const requiredHeaders = ['registrationNo', 'name', 'email'];
+      const requiredHeaders = ['registrationNo', 'name'];
       
       // Validate headers
       const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
       if (missingHeaders.length > 0) {
-        showError(`Missing required columns: ${missingHeaders.join(', ')}`, 'Invalid CSV Format');
+        showConfirmation(
+          'Invalid CSV Format',
+          `Missing required columns: ${missingHeaders.join(', ')}. Please check your CSV file format.`,
+          () => {},
+          'danger',
+          'OK',
+          ''
+        );
         return;
       }
 
@@ -558,7 +867,14 @@ export const StudentsPage = ({ onViewStudent }) => {
       }
 
       if (studentsToImport.length === 0) {
-        showError('No valid students found in CSV file', 'Import Failed');
+        showConfirmation(
+          'Import Failed',
+          'No valid students found in CSV file. Please check your file format and data.',
+          () => {},
+          'danger',
+          'OK',
+          ''
+        );
         setImportResults({ success: 0, failed: errors.length, errors });
         return;
       }
@@ -593,7 +909,14 @@ export const StudentsPage = ({ onViewStudent }) => {
       }
 
     } catch (error) {
-      showError(error.message || 'Failed to import CSV', 'Import Error');
+      showConfirmation(
+        'Import Error',
+        error.message || 'Failed to import CSV. Please try again.',
+        () => {},
+        'danger',
+        'OK',
+        ''
+      );
     } finally {
       setImportLoading(false);
     }
@@ -631,10 +954,11 @@ export const StudentsPage = ({ onViewStudent }) => {
                 <button
                   onClick={handleExportCSV}
                   className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white rounded-lg hover:shadow-lg transition-all font-medium text-sm sm:text-base"
-                  title="Export to CSV"
+                  title="Export to Excel"
                 >
                   <Download className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span className="hidden sm:inline">Export</span>
+                  <span className="hidden sm:inline">Export Excel</span>
+                  <span className="sm:hidden">Export</span>
                 </button>
               )}
             </div>
@@ -651,7 +975,17 @@ export const StudentsPage = ({ onViewStudent }) => {
           )}
           <button
             onClick={() => {
-              if (!selectedBatch) { showWarning('Please select a batch first'); return; }
+              if (!selectedBatch) { 
+                showConfirmation(
+                  'No Batch Selected',
+                  'Please select a batch first before adding a student.',
+                  () => {},
+                  'warning',
+                  'OK',
+                  ''
+                );
+                return; 
+              }
               setEditingStudent(null);
               setFormData({
                 registrationNo: '',
@@ -1133,11 +1467,10 @@ export const StudentsPage = ({ onViewStudent }) => {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Email *
+                  Email
                 </label>
                 <input
                   type="email"
-                  required
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-cyan-500 dark:bg-slate-800 dark:text-white"
@@ -1148,11 +1481,12 @@ export const StudentsPage = ({ onViewStudent }) => {
                 <>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Department *
+                      Department
                     </label>
                     <CustomSelect
                       value={formData.department}
-                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                      onChange={() => {}} // No-op function
+                      disabled={true}
                       placeholder="Select Department"
                       options={Object.values(facultyStructure).flatMap(faculty => 
                         faculty.departments.map(dept => ({
@@ -1160,40 +1494,45 @@ export const StudentsPage = ({ onViewStudent }) => {
                           label: dept.name
                         }))
                       )}
-                      className="w-full"
+                      className="w-full opacity-50 cursor-not-allowed"
                     />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Department cannot be changed when editing</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        Year *
+                        Year
                       </label>
                       <CustomSelect
                         value={formData.year}
-                        onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
+                        onChange={() => {}} // No-op function
+                        disabled={true}
                         placeholder="Select Year"
                         options={[1, 2, 3, 4].map(y => ({
                           value: y,
                           label: `Year ${y}`
                         }))}
-                        className="w-full"
+                        className="w-full opacity-50 cursor-not-allowed"
                       />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Cannot be changed</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        Semester *
+                        Semester
                       </label>
                       <CustomSelect
                         value={formData.semester}
-                        onChange={(e) => setFormData({ ...formData, semester: parseInt(e.target.value) })}
+                        onChange={() => {}} // No-op function
+                        disabled={true}
                         placeholder="Select Semester"
                         options={[1, 2].map(s => ({
                           value: s,
                           label: s === 1 ? '1st Semester' : '2nd Semester'
                         }))}
-                        className="w-full"
+                        className="w-full opacity-50 cursor-not-allowed"
                       />
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Cannot be changed</p>
                     </div>
                   </div>
                 </>
@@ -1397,6 +1736,72 @@ export const StudentsPage = ({ onViewStudent }) => {
                   Edit Student
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+            <div className={`p-5 border-b border-slate-200 dark:border-slate-700 ${
+              confirmModalData.type === 'danger' ? 'bg-red-50 dark:bg-red-900/20' :
+              confirmModalData.type === 'warning' ? 'bg-amber-50 dark:bg-amber-900/20' :
+              'bg-blue-50 dark:bg-blue-900/20'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  confirmModalData.type === 'danger' ? 'bg-red-100 dark:bg-red-900/40' :
+                  confirmModalData.type === 'warning' ? 'bg-amber-100 dark:bg-amber-900/40' :
+                  'bg-blue-100 dark:bg-blue-900/40'
+                }`}>
+                  {confirmModalData.type === 'danger' ? (
+                    <X className={`w-5 h-5 text-red-600 dark:text-red-400`} />
+                  ) : confirmModalData.type === 'warning' ? (
+                    <span className="text-amber-600 dark:text-amber-400 text-lg font-bold">!</span>
+                  ) : (
+                    <span className="text-blue-600 dark:text-blue-400 text-lg font-bold">i</span>
+                  )}
+                </div>
+                <h3 className={`text-lg font-semibold ${
+                  confirmModalData.type === 'danger' ? 'text-red-900 dark:text-red-100' :
+                  confirmModalData.type === 'warning' ? 'text-amber-900 dark:text-amber-100' :
+                  'text-blue-900 dark:text-blue-100'
+                }`}>
+                  {confirmModalData.title}
+                </h3>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line">
+                {confirmModalData.message}
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 p-5 pt-0">
+              {confirmModalData.cancelText && (
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  {confirmModalData.cancelText}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  confirmModalData.onConfirm();
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  confirmModalData.type === 'danger' 
+                    ? 'bg-red-600 hover:bg-red-700 text-white' 
+                    : confirmModalData.type === 'warning'
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {confirmModalData.confirmText}
+              </button>
             </div>
           </div>
         </div>

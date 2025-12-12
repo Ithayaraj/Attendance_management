@@ -1249,7 +1249,7 @@ export const AnalyticsPage = () => {
 
   return (
     <div className="w-full max-w-full overflow-x-hidden">
-      <div className="p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {!selectedBatch && (
           <div>
             <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Batch-wise Attendance Analytics</h3>
@@ -1258,7 +1258,7 @@ export const AnalyticsPage = () => {
         )}
 
       {!selectedBatch && (
-        <>
+        <div className="space-y-4 sm:space-y-6">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
@@ -1330,7 +1330,7 @@ export const AnalyticsPage = () => {
               <div 
                 key={batch.batchId} 
                 onClick={() => handleBatchClick(batch)}
-                className="bg-white dark:bg-slate-900 rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden hover:shadow-xl hover:border-cyan-400 dark:hover:border-cyan-600 transition-all cursor-pointer hover:scale-105"
+                className="bg-white dark:bg-slate-900 rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden hover:shadow-xl hover:border-cyan-400 dark:hover:border-cyan-600 transition-all cursor-pointer"
               >
                 <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800 p-4 border-b-2 border-slate-200 dark:border-slate-700">
                   <div className="flex items-center justify-between gap-3">
@@ -1370,14 +1370,14 @@ export const AnalyticsPage = () => {
 
                   {total > 0 ? (
                     <>
-                      <ResponsiveContainer width="100%" height={160}>
+                      <ResponsiveContainer width="100%" height={100}>
                         <PieChart>
                           <Pie
                             data={chartData}
                             cx="50%"
                             cy="50%"
-                            innerRadius={40}
-                            outerRadius={65}
+                            innerRadius={30}
+                            outerRadius={50}
                             paddingAngle={2}
                             dataKey="value"
                             label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
@@ -1438,12 +1438,12 @@ export const AnalyticsPage = () => {
               })}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Batch Details View */}
       {selectedBatch && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Back Button and Header */}
           <div className="flex items-center gap-3 sm:gap-4">
             <button
@@ -1688,14 +1688,14 @@ export const AnalyticsPage = () => {
 
                                           {displayTotal > 0 ? (
                                             <>
-                                              <ResponsiveContainer width="100%" height={140}>
+                                              <ResponsiveContainer width="100%" height={150}>
                                                 <PieChart>
                                                   <Pie
                                                     data={displayChartData}
                                                     cx="50%"
                                                     cy="50%"
-                                                    innerRadius={35}
-                                                    outerRadius={60}
+                                                    innerRadius={25}
+                                                    outerRadius={45}
                                                     paddingAngle={2}
                                                     dataKey="value"
                                                     label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
@@ -1783,7 +1783,7 @@ export const AnalyticsPage = () => {
                                                     {courseTableData.students.map((student, idx) => (
                                                       <tr key={student.studentId} className={`${idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/50'} hover:bg-cyan-50 dark:hover:bg-cyan-900/10 transition-colors`}>
                                                         <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-bold border-b border-slate-200 dark:border-slate-700 sticky left-0 bg-inherit z-20">{student.registrationNo}</td>
-                                                        <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-medium border-b border-slate-200 dark:border-slate-700">{student.name}</td>
+                                                        <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700">{student.name}</td>
                                                         {courseTableData.months.map(month => {
                                                           const monthData = student.monthlyStats.find(m => m.month === month);
                                                           return (
@@ -1959,12 +1959,12 @@ export const AnalyticsPage = () => {
                               {/* Student Header - Always Visible */}
                               <button
                                 onClick={() => handleStudentSelect(isExpanded ? null : student)}
-                                className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                                className="w-full text-left p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
                               >
                                 <div className="flex items-center justify-between">
                                   <div className="flex-1">
-                                    <p className="font-semibold text-slate-900 dark:text-white text-base">{student.name}</p>
-                                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{student.registrationNo}</p>
+                                    <p className="text-slate-900 dark:text-white text-sm font-bold">{student.registrationNo}</p>
+                                    <p className="text-slate-900 dark:text-white text-sm mt-0.5">{student.name}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
                                       <p className="text-xs text-slate-500 dark:text-slate-500">{student.email}</p>
                                       {student.mobile && (
@@ -2157,14 +2157,14 @@ export const AnalyticsPage = () => {
 
                                                 {total > 0 ? (
                                                   <>
-                                                    <ResponsiveContainer width="100%" height={140}>
+                                                    <ResponsiveContainer width="100%" height={150}>
                                                       <PieChart>
                                                         <Pie
                                                           data={chartData}
                                                           cx="50%"
                                                           cy="50%"
-                                                          innerRadius={35}
-                                                          outerRadius={55}
+                                                          innerRadius={25}
+                                                          outerRadius={45}
                                                           paddingAngle={2}
                                                           dataKey="value"
                                                           label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
@@ -2326,7 +2326,7 @@ export const AnalyticsPage = () => {
                                 <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-bold border-b border-slate-200 dark:border-slate-700 sticky left-0 bg-inherit z-20 whitespace-nowrap">
                                   {student.registrationNo}
                                 </td>
-                                <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white font-medium border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
+                                <td className="px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-700 whitespace-nowrap">
                                   {student.name}
                                 </td>
                                 {overviewData.courses.map(course => {

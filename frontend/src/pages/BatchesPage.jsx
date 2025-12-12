@@ -18,6 +18,17 @@ export const BatchesPage = () => {
   const [selectedBatchYear, setSelectedBatchYear] = useState('');
   const [selectedFaculty, setSelectedFaculty] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
+
+  // Modal states
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalData, setConfirmModalData] = useState({
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    onConfirm: () => {},
+    type: 'warning' // 'warning', 'danger', 'info'
+  });
   const [currentYear, setCurrentYear] = useState('1');
   const [currentSemester, setCurrentSemester] = useState('1');
   const [editing, setEditing] = useState(null);
@@ -26,6 +37,19 @@ export const BatchesPage = () => {
   const [newYearValue, setNewYearValue] = useState('');
   const [expandedYears, setExpandedYears] = useState({});
   const hasLoadedRef = useRef(false);
+
+  // Helper function to show confirmation modal
+  const showConfirmation = (title, message, onConfirm, type = 'warning', confirmText = 'Confirm', cancelText = 'Cancel') => {
+    setConfirmModalData({
+      title,
+      message,
+      confirmText,
+      cancelText,
+      onConfirm,
+      type
+    });
+    setShowConfirmModal(true);
+  };
   
   // Get all unique batch years
   const batchYears = useMemo(() => {
@@ -131,19 +155,40 @@ export const BatchesPage = () => {
     e.preventDefault();
     try {
       if (!newBatchYear) {
-        showError('Please enter batch year');
+        showConfirmation(
+          'Missing Batch Year',
+          'Please enter batch year.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       
       const year = Number(newBatchYear);
       if (year < 1900 || year > 3000) {
-        showError('Please enter a valid year');
+        showConfirmation(
+          'Invalid Year',
+          'Please enter a valid year between 1900 and 3000.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       
       // Check if batch year already exists
       if (batchYears.includes(year)) {
-        showError('This batch year already exists');
+        showConfirmation(
+          'Batch Year Exists',
+          'This batch year already exists. Please choose a different year.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       
@@ -173,15 +218,36 @@ export const BatchesPage = () => {
     e.preventDefault();
     try {
       if (!selectedBatchYear) {
-        showError('Please select batch year');
+        showConfirmation(
+          'No Batch Year Selected',
+          'Please select batch year.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       if (!selectedFaculty) {
-        showError('Please select faculty');
+        showConfirmation(
+          'No Faculty Selected',
+          'Please select faculty.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       if (!selectedDepartment) {
-        showError('Please select department');
+        showConfirmation(
+          'No Department Selected',
+          'Please select department.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       
@@ -211,35 +277,109 @@ export const BatchesPage = () => {
   };
 
   const remove = async (id) => {
-    if (!confirm('Are you sure you want to delete this department?')) return;
-    try {
-      await apiClient.delete(`/api/batches/${id}`);
-      showSuccess('Department deleted successfully!');
-      sessionStorage.removeItem(CACHE_KEY);
-      await load(false);
-    } catch (e) {
-      showError(e.message || 'Failed to delete');
-    }
+    const attemptDelete = async (forceDelete = false) => {
+      try {
+        const url = forceDelete ? `/api/batches/${id}?force=true` : `/api/batches/${id}`;
+        await apiClient.delete(url);
+        showSuccess('Department deleted successfully!');
+        sessionStorage.removeItem(CACHE_KEY);
+        await load(false);
+      } catch (e) {
+        if (e.response?.status === 409 && e.response?.data?.requiresForceDelete) {
+          // Batch has related data, show force delete confirmation
+          const relatedData = e.response.data.relatedData;
+          const batchInfo = e.response.data.batchInfo;
+          const dataDetails = [];
+          
+          if (relatedData.students > 0) {
+            dataDetails.push(`${relatedData.students} student${relatedData.students !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.courses > 0) {
+            dataDetails.push(`${relatedData.courses} course${relatedData.courses !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.sessions > 0) {
+            dataDetails.push(`${relatedData.sessions} session${relatedData.sessions !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.enrollments > 0) {
+            dataDetails.push(`${relatedData.enrollments} enrollment${relatedData.enrollments !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.attendanceRecords > 0) {
+            dataDetails.push(`${relatedData.attendanceRecords} attendance record${relatedData.attendanceRecords !== 1 ? 's' : ''}`);
+          }
+          if (relatedData.scanRecords > 0) {
+            dataDetails.push(`${relatedData.scanRecords} scan record${relatedData.scanRecords !== 1 ? 's' : ''}`);
+          }
+
+          const message = `This department (${batchInfo.department} - Year ${batchInfo.year}, Semester ${batchInfo.semester}) has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+
+          showConfirmation(
+            'Force Delete Required',
+            message,
+            () => attemptDelete(true),
+            'danger',
+            'Delete All',
+            'Cancel'
+          );
+        } else {
+          showError(e.message || 'Failed to delete');
+        }
+      }
+    };
+
+    showConfirmation(
+      'Delete Department',
+      'Are you sure you want to delete this department? This action cannot be undone.',
+      () => attemptDelete(false),
+      'danger',
+      'Delete',
+      'Cancel'
+    );
   };
 
   const deleteBatch = async (year) => {
     const deptCount = groupedBatches[year].length;
     const deptText = deptCount === 1 ? 'department' : 'departments';
     
-    if (!confirm(`Are you sure you want to delete ${year} batch with all ${deptCount} ${deptText}? This action cannot be undone.`)) return;
-    
+    showConfirmation(
+      'Delete Entire Batch',
+      `Are you sure you want to delete ${year} batch with all ${deptCount} ${deptText}? This action cannot be undone.`,
+      async () => {
+        await performBatchDelete(year, false);
+      },
+      'danger',
+      'Delete Batch',
+      'Cancel'
+    );
+  };
+
+  const performBatchDelete = async (year, forceDelete = false) => {
     try {
       // Delete all departments in this batch
-      const deletePromises = groupedBatches[year].map(batch => 
-        apiClient.delete(`/api/batches/${batch._id}`)
-      );
+      const deletePromises = groupedBatches[year].map(batch => {
+        const url = forceDelete ? `/api/batches/${batch._id}?force=true` : `/api/batches/${batch._id}`;
+        return apiClient.delete(url);
+      });
       
       await Promise.all(deletePromises);
       showSuccess(`${year} batch deleted successfully!`);
       sessionStorage.removeItem(CACHE_KEY);
       await load(false);
     } catch (e) {
-      showError(e.message || 'Failed to delete batch');
+      if (e.response?.status === 409 && e.response?.data?.requiresForceDelete) {
+        // Some departments have related data, show force delete confirmation
+        const message = `Some departments in ${year} batch have related data (students, courses, sessions, enrollments, attendance records, scan records) that will also be deleted.\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+
+        showConfirmation(
+          'Force Delete Required',
+          message,
+          () => performBatchDelete(year, true),
+          'danger',
+          'Delete All',
+          'Cancel'
+        );
+      } else {
+        showError(e.message || 'Failed to delete batch');
+      }
     }
   };
 
@@ -255,12 +395,26 @@ export const BatchesPage = () => {
       const newYear = Number(newYearValue);
       
       if (newYear < 1900 || newYear > 3000) {
-        showError('Please enter a valid year');
+        showConfirmation(
+          'Invalid Year',
+          'Please enter a valid year between 1900 and 3000.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       
       if (newYear !== oldYear && batchYears.includes(newYear)) {
-        showError('This batch year already exists');
+        showConfirmation(
+          'Batch Year Exists',
+          'This batch year already exists. Please choose a different year.',
+          () => {},
+          'warning',
+          'OK',
+          ''
+        );
         return;
       }
       
@@ -881,6 +1035,72 @@ export const BatchesPage = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+            <div className={`p-5 border-b border-slate-200 dark:border-slate-700 ${
+              confirmModalData.type === 'danger' ? 'bg-red-50 dark:bg-red-900/20' :
+              confirmModalData.type === 'warning' ? 'bg-amber-50 dark:bg-amber-900/20' :
+              'bg-blue-50 dark:bg-blue-900/20'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  confirmModalData.type === 'danger' ? 'bg-red-100 dark:bg-red-900/40' :
+                  confirmModalData.type === 'warning' ? 'bg-amber-100 dark:bg-amber-900/40' :
+                  'bg-blue-100 dark:bg-blue-900/40'
+                }`}>
+                  {confirmModalData.type === 'danger' ? (
+                    <span className="text-red-600 dark:text-red-400 text-lg font-bold">✕</span>
+                  ) : confirmModalData.type === 'warning' ? (
+                    <span className="text-amber-600 dark:text-amber-400 text-lg font-bold">!</span>
+                  ) : (
+                    <span className="text-blue-600 dark:text-blue-400 text-lg font-bold">i</span>
+                  )}
+                </div>
+                <h3 className={`text-lg font-semibold ${
+                  confirmModalData.type === 'danger' ? 'text-red-900 dark:text-red-100' :
+                  confirmModalData.type === 'warning' ? 'text-amber-900 dark:text-amber-100' :
+                  'text-blue-900 dark:text-blue-100'
+                }`}>
+                  {confirmModalData.title}
+                </h3>
+              </div>
+            </div>
+            <div className="p-5">
+              <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line">
+                {confirmModalData.message}
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 p-5 pt-0">
+              {confirmModalData.cancelText && (
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  {confirmModalData.cancelText}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  confirmModalData.onConfirm();
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  confirmModalData.type === 'danger' 
+                    ? 'bg-red-600 hover:bg-red-700 text-white' 
+                    : confirmModalData.type === 'warning'
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                {confirmModalData.confirmText}
+              </button>
+            </div>
           </div>
         </div>
       )}
