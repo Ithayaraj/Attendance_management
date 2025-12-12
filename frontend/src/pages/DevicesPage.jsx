@@ -25,7 +25,7 @@ const DeviceCard = memo(({ device, onRotateKey, onEdit, onDelete, showApiKey, on
   const [showMenu, setShowMenu] = useState(false);
   return (
     <div 
-      className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-5 hover:shadow-md transition-shadow"
+      className="bg-white dark:bg-slate-900/60 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200 dark:border-slate-600/50 hover:border-cyan-500 dark:hover:border-cyan-400 hover:shadow-2xl p-3 sm:p-4 transition-all duration-300"
     >
       {/* Header with Status and Actions */}
       <div className="flex items-start justify-between mb-4">
@@ -211,7 +211,6 @@ DeviceCard.displayName = 'DeviceCard';
 export const DevicesPage = () => {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -224,14 +223,9 @@ export const DevicesPage = () => {
   const [addingDevice, setAddingDevice] = useState(false);
   const [updatingDevice, setUpdatingDevice] = useState(false);
 
-  const loadDevices = useCallback(async (isRefresh = false) => {
+  const loadDevices = useCallback(async (showLoading = true) => {
     try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else if (!loading) {
-        // Don't show loading on auto-refresh
-        return;
-      } else {
+      if (showLoading) {
         setLoading(true);
       }
       
@@ -239,64 +233,23 @@ export const DevicesPage = () => {
       const data = response?.data || response;
       const newDevices = Array.isArray(data) ? data : [];
       
-      // Smart update: only update state if data actually changed
-      setDevices(prevDevices => {
-        // If lengths differ, definitely update
-        if (prevDevices.length !== newDevices.length) {
-          setLastUpdate(new Date());
-          return newDevices;
-        }
-        
-        // Check if any device data changed
-        let hasChanges = false;
-        const updatedDevices = prevDevices.map(prevDevice => {
-          const newDevice = newDevices.find(d => d._id === prevDevice._id);
-          if (!newDevice) {
-            hasChanges = true;
-            return prevDevice;
-          }
-          
-          // Check if this specific device changed
-          const deviceChanged = (
-            prevDevice.status !== newDevice.status ||
-            prevDevice.lastSeenAt !== newDevice.lastSeenAt ||
-            prevDevice.name !== newDevice.name ||
-            prevDevice.location !== newDevice.location ||
-            prevDevice.apiKey !== newDevice.apiKey
-          );
-          
-          if (deviceChanged) {
-            hasChanges = true;
-            return newDevice; // Return new device object only if changed
-          }
-          
-          return prevDevice; // Keep same reference if unchanged
-        });
-        
-        if (hasChanges) {
-          setLastUpdate(new Date());
-          return updatedDevices;
-        }
-        
-        // No changes at all, return same array reference
-        return prevDevices;
-      });
+      setDevices(newDevices);
+      setLastUpdate(new Date());
     } catch (error) {
       console.error('Error loading devices:', error);
       setDevices([]);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (showLoading) setLoading(false);
     }
-  }, [loading]);
+  }, []);
 
   useEffect(() => {
-    loadDevices();
+    loadDevices(true); // Initial load with loading spinner
     
-    // Auto-refresh every 10 seconds to show real-time status
+    // Auto-refresh every 30 seconds to show real-time status (same as dashboard)
     const interval = setInterval(() => {
-      loadDevices();
-    }, 10000);
+      loadDevices(false); // Silent refresh without loading spinner
+    }, 30000);
     
     return () => clearInterval(interval);
   }, [loadDevices]);
@@ -308,7 +261,7 @@ export const DevicesPage = () => {
       await apiClient.post('/api/devices', newDevice);
       setShowAddModal(false);
       setNewDevice({ name: '', location: '' });
-      await loadDevices(true); // Force refresh
+      await loadDevices(true);
     } catch (error) {
       alert('Error adding device: ' + error.message);
     } finally {
@@ -331,7 +284,7 @@ export const DevicesPage = () => {
       });
       setShowEditModal(false);
       setEditingDevice(null);
-      await loadDevices(true); // Force refresh
+      await loadDevices(true);
     } catch (error) {
       alert('Error updating device: ' + error.message);
     } finally {
@@ -349,7 +302,7 @@ export const DevicesPage = () => {
       await apiClient.delete(`/api/devices/${deletingDevice._id}`);
       setShowDeleteModal(false);
       setDeletingDevice(null);
-      await loadDevices(true); // Force refresh
+      await loadDevices(true);
     } catch (error) {
       alert('Error deleting device: ' + error.message);
     }
@@ -361,7 +314,7 @@ export const DevicesPage = () => {
     try {
       await apiClient.post(`/api/devices/${id}/rotate-key`);
       alert('API key rotated successfully!');
-      await loadDevices(true); // Force refresh
+      await loadDevices(true);
     } catch (error) {
       alert('Error rotating key: ' + error.message);
     }
@@ -401,15 +354,6 @@ export const DevicesPage = () => {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
-            onClick={() => loadDevices(true)}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-all font-medium disabled:opacity-50"
-            title="Refresh devices"
-          >
-            <RefreshCw className={`w-4 sm:w-5 h-4 sm:h-5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-          <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:shadow-lg transition-all font-medium"
           >
@@ -421,7 +365,7 @@ export const DevicesPage = () => {
       </div>
 
       {/* Devices Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
         {devices.length === 0 ? (
           <div className="col-span-full bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-8 sm:p-12 text-center">
             <Smartphone className="w-12 sm:w-16 h-12 sm:h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" />

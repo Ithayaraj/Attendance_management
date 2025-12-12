@@ -91,9 +91,12 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
     throw new Error('Invalid device key');
   }
 
-  device.lastSeenAt = new Date();
+  const now = new Date();
+  device.lastSeenAt = now;
   device.status = 'online';
   await device.save();
+  
+  console.log(`✅ Device "${device.name}" marked ONLINE at ${now.toISOString()} - should stay online for 15 minutes until ${new Date(now.getTime() + 15*60*1000).toISOString()}`);
 
   // Check if student exists in database
   const student = await Student.findOne({ registrationNo });

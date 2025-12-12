@@ -9,7 +9,7 @@ export const useDeviceStatus = () => {
   const loadDeviceStatus = async () => {
     try {
       const response = await apiClient.get('/api/devices');
-      const data = response?.data || response;
+      const data = response?.data?.data || response?.data || response;
       const deviceList = Array.isArray(data) ? data : [];
       
       setDevices(deviceList);

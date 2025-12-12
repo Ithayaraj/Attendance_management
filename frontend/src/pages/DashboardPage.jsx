@@ -281,22 +281,7 @@ export const DashboardPage = () => {
               {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          {/* Manual Refresh Button */}
-          <div className="flex items-center justify-end">
-            <button
-              onClick={() => {
-                console.log('🔄 Manual refresh triggered');
-                loadCurrentSessions(true);
-              }}
-              className="px-3 sm:px-4 py-2 text-sm bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors flex items-center gap-2 flex-shrink-0"
-              title="Refresh data manually"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span>Refresh</span>
-            </button>
-          </div>
+
         </div>
       </div>
 
@@ -319,7 +304,7 @@ export const DashboardPage = () => {
                   <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
                   Live Now
                 </h4>
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
                   {currentSessions
                     .filter(s => s.status === 'live')
                     .map((session) => (
@@ -343,7 +328,7 @@ export const DashboardPage = () => {
                   </h4>
                   <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700"></div>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
                   {currentSessions
                     .filter(s => s.status === 'scheduled')
                     .map((session) => (

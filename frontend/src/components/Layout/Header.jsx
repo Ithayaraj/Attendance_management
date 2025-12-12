@@ -1,7 +1,6 @@
 import { LogOut, Moon, Sun, Menu, X } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { ButtonSpinner } from '../LoadingSpinner';
-import { DeviceStatusIndicator } from '../DeviceStatusIndicator';
 
 export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = false, onMenuClick }) => {
   const { isDark, toggleTheme } = useTheme();
@@ -23,17 +22,14 @@ export const Header = ({ user, onLogout, title = 'Dashboard', logoutLoading = fa
             )}
           <div className="flex-1 min-w-0">
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">{title}</h2>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-1">
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                  {new Date().toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </p>
-                <DeviceStatusIndicator />
-              </div>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </p>
             </div>
           </div>
 

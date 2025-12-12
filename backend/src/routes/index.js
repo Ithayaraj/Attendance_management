@@ -103,4 +103,7 @@ router.put('/devices/:id', requireAuth, requireRole(['admin']), devicesControlle
 router.post('/devices/:id/rotate-key', requireAuth, requireRole(['admin']), devicesController.rotateDeviceKey);
 router.delete('/devices/:id', requireAuth, requireRole(['admin']), devicesController.deleteDevice);
 
+// Debug endpoint for testing device status (remove in production)
+router.get('/devices/debug/:action', devicesController.debugDeviceStatus);
+
 export default router;

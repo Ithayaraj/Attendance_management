@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider, useNotification } from './contexts/NotificationContext';
 import { NotificationContainer } from './components/Notification';
+import { FloatingDeviceStatus } from './components/FloatingDeviceStatus';
 import { useAuth } from './hooks/useAuth';
 import { useScanStream } from './hooks/useScanStream';
 import { Sidebar } from './components/Layout/Sidebar';
@@ -314,7 +315,8 @@ function AppContent() {
         onRemove={removeNotification}
       />
 
-
+      {/* Floating Device Status - Bottom right corner */}
+      <FloatingDeviceStatus />
 
       <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-900 w-full overflow-x-hidden">
         {/* Mobile overlay */}
