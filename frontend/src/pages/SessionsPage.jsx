@@ -322,7 +322,7 @@ export const SessionsPage = () => {
     return isSessionStarted(session) && !isSessionEnded(session);
   };
 
-  // Calculate time remaining until session goes live (with 15min early access)
+  // Calculate time remaining until session goes live (at exact start time)
   const getTimeUntilLive = (session) => {
     if (!session.date || !session.startTime) return null;
 
@@ -330,11 +330,7 @@ export const SessionsPage = () => {
     const sessionStartDate = getSessionDateTime(session.date, session.startTime);
     if (!sessionStartDate) return null;
 
-    // 15 minutes early access
-    const EARLY_ACCESS_MINUTES = 15;
-    const earliestLiveTime = new Date(sessionStartDate.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
-
-    const diffMs = earliestLiveTime.getTime() - now.getTime();
+    const diffMs = sessionStartDate.getTime() - now.getTime();
     
     if (diffMs <= 0) return null; // Already time to go live
 
@@ -434,19 +430,11 @@ export const SessionsPage = () => {
     );
 
     // Check for sessions that should be live (started but not ended)
-    // Only update to live if the session has actually started (with 15min early access)
+    // Only update to live if the session has actually started (at exact start time)
     const sessionsToLive = sessionsList.filter(s => {
       if (s.status !== 'scheduled') return false;
       
-      const now = new Date();
-      const sessionStartDate = getSessionDateTime(s.date, s.startTime);
-      if (!sessionStartDate) return false;
-      
-      // Allow 15 minutes early access (same as backend)
-      const EARLY_ACCESS_MINUTES = 15;
-      const earliestLiveTime = new Date(sessionStartDate.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
-      
-      return now && shouldBeLive(s);
+      return shouldBeLive(s);
     });
 
     // Update expired sessions to closed

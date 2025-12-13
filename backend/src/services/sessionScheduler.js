@@ -1,6 +1,5 @@
 import { ClassSession } from '../models/ClassSession.js';
 
-const EARLY_ACCESS_MINUTES = 15;
 const CHECK_INTERVAL_MS = 30 * 1000; // Check every 30 seconds
 
 /**
@@ -86,11 +85,8 @@ export class SessionScheduler {
           sessionEndDateTime.setDate(sessionEndDateTime.getDate() + 1);
         }
 
-        // Calculate earliest live time (15 minutes before start)
-        const earliestLiveTime = new Date(sessionStartDateTime.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
-
-        // Check if session should transition to live
-        if (session.status === 'scheduled' && now >= earliestLiveTime && now < sessionEndDateTime) {
+        // Check if session should transition to live (at exact start time)
+        if (session.status === 'scheduled' && now >= sessionStartDateTime && now < sessionEndDateTime) {
           // Check if another session is already live for this batch
           const existingLiveSession = await ClassSession.findOne({
             department: session.department,
