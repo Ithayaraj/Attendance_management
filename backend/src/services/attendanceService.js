@@ -186,8 +186,8 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
   if (device.activeSessionId) {
     const lockedSession = await ClassSession.findById(device.activeSessionId).populate('courseId');
 
-    // Check validity: exists, not closed, and date matches (today or recent offline sync)
-    if (lockedSession && lockedSession.status !== 'closed' && datesToCheck.includes(lockedSession.date)) {
+    // Check validity: exists, is LIVE (not just not closed), and date matches (today or recent offline sync)
+    if (lockedSession && lockedSession.status === 'live' && datesToCheck.includes(lockedSession.date)) {
       // Session is valid, now check if student belongs to this batch (department + year + semester)
       // Normalize session department for comparison
       const sessionDeptCode = normalizeDepartment(lockedSession.department);
@@ -241,10 +241,10 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
     });
 
     if (activeSessions.length === 0) {
-      // Check if there are sessions for other batches today
+      // Check if there are LIVE sessions for other batches today
       const otherBatchSessions = await ClassSession.find({
         date: scannedDate,
-        status: { $in: ['live', 'scheduled'] }
+        status: 'live'
       }).populate('courseId');
 
       // Filter to sessions NOT matching student's batch
@@ -266,10 +266,10 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
           const sDeptCode = normalizeDepartment(s.department);
           return `${sDeptCode} Y${s.year}S${s.semester}`;
         }))].join(', ');
-        throw new Error(`No session for your batch (${studentDeptCode} Y${studentYear}S${studentSemester}). Active sessions: ${otherBatches}`);
+        throw new Error(`No live session for your batch (${studentDeptCode} Y${studentYear}S${studentSemester}). Live sessions: ${otherBatches}`);
       }
 
-      throw new Error(`No session for ${studentDeptCode} Y${studentYear}S${studentSemester} today`);
+      throw new Error(`No live session for ${studentDeptCode} Y${studentYear}S${studentSemester} today`);
     }
 
     // Step 2: Ensure only one live session exists for this department+year+semester combination
@@ -281,24 +281,29 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
     }
 
     // Step 3: Select the active session
-    // Prioritize order: LIVE > SCHEDULED > COMPLETED
+    // ONLY ALLOW LIVE SESSIONS - Students cannot scan during scheduled sessions
     if (liveSessions.length > 0) {
       session = liveSessions[0];
     } else {
+      // Check if there are scheduled sessions to provide helpful error message
       const scheduledSessions = activeSessions.filter(s => s.status === 'scheduled');
       const completedSessions = activeSessions.filter(s => s.status === 'completed');
 
       if (scheduledSessions.length > 0) {
-        session = scheduledSessions[0];
+        const courseCode = scheduledSessions[0].courseId.code;
+        const startTime = scheduledSessions[0].startTime;
+        throw new Error(`${courseCode} session is scheduled but not yet live. Session starts at ${startTime}.`);
       } else if (completedSessions.length > 0) {
-        session = completedSessions[0];
+        const courseCode = completedSessions[0].courseId.code;
+        const endTime = completedSessions[0].endTime;
+        throw new Error(`${courseCode} session has ended at ${endTime}.`);
       } else {
-        session = activeSessions[0];
+        throw new Error(`No live session found for ${studentDeptCode} Y${studentYear}S${studentSemester}`);
       }
     }
 
     if (!session) {
-      throw new Error(`No active session found for ${studentDeptCode} Y${studentYear}S${studentSemester}`);
+      throw new Error(`No live session found for ${studentDeptCode} Y${studentYear}S${studentSemester}`);
     }
 
     // Lock the device to this newly found session
@@ -323,13 +328,15 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
     throw new Error(`Batch mismatch! Session is for ${sessionDeptCode} Y${sessionYear}S${sessionSemester}, you are ${studentDeptCode} Y${studentYear}S${studentSemester}`);
   }
 
+  // CRITICAL: Final validation - ensure session is actually LIVE and timing is correct
+  // This prevents attendance even if session status was manually set to live before start time
+  if (session.status !== 'live') {
+    throw new Error(`Session ${session.courseId.code} is not live (status: ${session.status})`);
+  }
+
   console.log(`✅ Batch validation passed (${studentDeptCode} Y${studentYear}S${studentSemester})`);
   console.log(`=== End Debug ===\n`);
 
-  // Step 5: Check if scan is within valid time window
-  // Grace period: students arriving within GRACE_PERIOD_MINUTES are marked "present"
-  // After grace period but before end: marked "late"
-  // After session end: rejected
   // Step 5: Check if scan is within valid time window
   // Use absolute time difference to handle date wraparounds and "Early Access" validation
   // We treat session times as UTC to match the 'istDate' which stores Local Time in UTC components
@@ -341,6 +348,13 @@ export const processScan = async (deviceApiKey, registrationNo, timestamp, meta 
   const diffMinutes = (istDate.getTime() - sessionStart.getTime()) / 60000;
 
   const EARLY_ACCESS_MINUTES = 15;
+
+  // Validate session timing - ensure it's actually time for this session to be live
+  const earliestLiveTime = new Date(sessionStart.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
+  
+  if (istDate < earliestLiveTime) {
+    throw new Error(`Session ${session.courseId.code} cannot be attended yet. Starts at ${session.startTime} (early access from ${new Date(earliestLiveTime.getTime() - IST_OFFSET_MS).toLocaleTimeString('en-US', { hour12: false, timeZone: 'Asia/Colombo' })})`);
+  }
 
   console.log(`⏱️ Time Check:`);
   console.log(`   Session Start: ${sessionStartIso}`);

@@ -5,6 +5,7 @@ import { apiClient } from '../lib/apiClient';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { SessionContainer } from '../components/SessionContainer';
 import { SessionDetailModal } from '../components/SessionDetailModal';
+import { DeviceStatusIndicator } from '../components/DeviceStatusIndicator';
 
 // University-wide statistics component when no sessions are active
 const UniversityStats = ({ refreshTrigger }) => {
@@ -282,6 +283,10 @@ export const DashboardPage = () => {
             </p>
           </div>
 
+          {/* Scanner Status */}
+          <div className="flex-shrink-0">
+            <DeviceStatusIndicator showSessionInfo={true} />
+          </div>
         </div>
       </div>
 

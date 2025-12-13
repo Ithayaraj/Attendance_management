@@ -218,11 +218,15 @@ export const createSession = async (req, res, next) => {
     // - If current time >= start time and < end time: 'live'
     // - If current time < start time: 'scheduled'
     // - If current time >= end time: 'closed' (shouldn't happen in creation, but handle it)
+    // Allow 15 minutes early access for instructors to set up
+    const EARLY_ACCESS_MINUTES = 15;
+    const earliestLiveTime = new Date(sessionStartDateTime.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
+    
     let initialStatus = 'scheduled';
     
-    if (now >= sessionStartDateTime && now < sessionEndDateTime) {
+    if (now >= earliestLiveTime && now < sessionEndDateTime) {
       initialStatus = 'live';
-      console.log(`Session start time has passed. Setting status to 'live'.`);
+      console.log(`Session start time has passed (with 15min early access). Setting status to 'live'.`);
     } else if (now >= sessionEndDateTime) {
       initialStatus = 'closed';
       console.log(`Session end time has passed. Setting status to 'closed'.`);
@@ -265,8 +269,9 @@ export const updateSessionStatus = async (req, res, next) => {
       });
     }
 
-    // If trying to set status to 'live', check if another session is already live for this batch (department + year + semester)
+    // If trying to set status to 'live', perform additional validations
     if (status === 'live') {
+      // Check if another session is already live for this batch (department + year + semester)
       const existingLiveSession = await ClassSession.findOne({
         department: session.department,
         year: session.year,
@@ -279,6 +284,27 @@ export const updateSessionStatus = async (req, res, next) => {
         return res.status(400).json({
           success: false,
           message: `Another session already live for Y${session.year}S${session.semester}. Close it first.`
+        });
+      }
+
+      // IMPORTANT: Check if session start time has arrived
+      // Only allow sessions to go live if their start time has passed
+      const now = new Date();
+      const sessionDate = new Date(session.date);
+      const [startHour, startMinute] = session.startTime.split(':').map(Number);
+      
+      const sessionStartDateTime = new Date(sessionDate);
+      sessionStartDateTime.setHours(startHour, startMinute, 0, 0);
+      
+      // Allow 15 minutes early access for setup
+      const EARLY_ACCESS_MINUTES = 15;
+      const earliestLiveTime = new Date(sessionStartDateTime.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
+      
+      if (now < earliestLiveTime) {
+        const timeUntilStart = Math.ceil((sessionStartDateTime.getTime() - now.getTime()) / (60 * 1000));
+        return res.status(400).json({
+          success: false,
+          message: `Session cannot go live yet. Starts at ${session.startTime} (${timeUntilStart} minutes remaining). Early access allowed 15 minutes before start time.`
         });
       }
     }
@@ -309,6 +335,43 @@ export const updateSession = async (req, res, next) => {
     }
 
     res.json({ success: true, data: session });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSessionRelations = async (req, res, next) => {
+  try {
+    const sessionId = req.params.sessionId;
+
+    const session = await ClassSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
+
+    // Check if there are related records
+    const [attendanceCount, scanCount, deviceCount] = await Promise.all([
+      (await import('../models/AttendanceRecord.js')).AttendanceRecord.countDocuments({ sessionId }),
+      (await import('../models/Scan.js')).Scan.countDocuments({ sessionId }),
+      (await import('../models/Device.js')).Device.countDocuments({ activeSessionId: sessionId })
+    ]);
+
+    const hasRelatedData = attendanceCount > 0 || scanCount > 0 || deviceCount > 0;
+
+    res.json({
+      success: true,
+      data: {
+        hasRelatedData,
+        relatedData: {
+          attendanceRecords: attendanceCount,
+          scanRecords: scanCount,
+          activeDevices: deviceCount
+        }
+      }
+    });
   } catch (error) {
     next(error);
   }

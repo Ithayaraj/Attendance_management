@@ -3,7 +3,13 @@ import { Device } from '../models/Device.js';
 
 export const getDevices = async (req, res, next) => {
   try {
-    const devices = await Device.find().sort({ name: 1 });
+    const devices = await Device.find().populate({
+      path: 'activeSessionId',
+      populate: {
+        path: 'courseId',
+        select: 'code name'
+      }
+    }).sort({ name: 1 });
 
     // Auto-update device status based on last seen time
     // Consider device offline if not seen in last 15 minutes
@@ -24,15 +30,43 @@ export const getDevices = async (req, res, next) => {
           if (shouldBeOffline && device.status === 'online') {
             console.log(`❌ Marking device "${device.name}" offline after ${minutesSinceLastSeen} minutes`);
             device.status = 'offline';
+            // Clear active session when going offline
+            device.activeSessionId = null;
             await device.save();
           }
         } else if (device.status === 'online') {
           // Device has no lastSeenAt but is marked online - mark as offline
           console.log(`❌ Device "${device.name}" has no lastSeenAt but is online - marking offline`);
           device.status = 'offline';
+          device.activeSessionId = null;
           await device.save();
         }
-        return device;
+
+        // Add session end time calculation if device has active session
+        let sessionEndTime = null;
+        let minutesUntilSessionEnd = null;
+        
+        if (device.activeSessionId && device.status === 'online') {
+          const session = device.activeSessionId;
+          if (session && session.date && session.endTime) {
+            // Calculate session end time in IST
+            const sessionEndIso = `${session.date}T${session.endTime}:00.000Z`;
+            const sessionEnd = new Date(sessionEndIso);
+            
+            // Add IST offset (+5:30)
+            const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+            const sessionEndIST = new Date(sessionEnd.getTime() + IST_OFFSET_MS);
+            
+            sessionEndTime = sessionEndIST;
+            minutesUntilSessionEnd = Math.max(0, Math.round((sessionEndIST.getTime() - now.getTime()) / 60000));
+          }
+        }
+
+        return {
+          ...device.toObject(),
+          sessionEndTime,
+          minutesUntilSessionEnd
+        };
       })
     );
 

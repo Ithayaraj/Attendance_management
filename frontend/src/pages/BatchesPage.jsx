@@ -36,6 +36,7 @@ export const BatchesPage = () => {
   const [editingBatchYear, setEditingBatchYear] = useState(null);
   const [newYearValue, setNewYearValue] = useState('');
   const [expandedYears, setExpandedYears] = useState({});
+  const [batchRelations, setBatchRelations] = useState({});
   const hasLoadedRef = useRef(false);
 
   // Helper function to show confirmation modal
@@ -107,6 +108,39 @@ export const BatchesPage = () => {
     return Object.keys(groupedBatches).sort((a, b) => b - a);
   }, [groupedBatches]);
 
+  // Check if any department in a batch year has relations
+  const batchYearHasRelations = (year) => {
+    if (!groupedBatches[year]) return false;
+    return groupedBatches[year].some(batch => batchRelations[batch._id]?.hasRelatedData);
+  };
+
+  // Check if batch has relations
+  const checkBatchRelations = async (batchId) => {
+    try {
+      const response = await apiClient.get(`/api/batches/${batchId}/relations`);
+      return response.data || {};
+    } catch (e) {
+      console.error('Failed to check batch relations:', e);
+      return {};
+    }
+  };
+
+  // Load batch relations for all batches
+  const loadBatchRelations = async (batchesData) => {
+    try {
+      const relations = {};
+      const relationPromises = batchesData.map(async (batch) => {
+        const batchRelation = await checkBatchRelations(batch._id);
+        relations[batch._id] = batchRelation;
+      });
+      
+      await Promise.all(relationPromises);
+      setBatchRelations(relations);
+    } catch (e) {
+      console.error('Failed to load batch relations:', e);
+    }
+  };
+
   const load = async (useCache = true) => {
     if (useCache && !hasLoadedRef.current) {
       const cached = sessionStorage.getItem(CACHE_KEY);
@@ -119,6 +153,9 @@ export const BatchesPage = () => {
             setBatches(data || []);
             hasLoadedRef.current = true;
             setLoading(false);
+            
+            // Load relations for cached data
+            await loadBatchRelations(data || []);
             
             if (age > 60 * 1000) {
               load(false);
@@ -136,6 +173,9 @@ export const BatchesPage = () => {
       const res = await apiClient.get('/api/batches');
       const batchesData = Array.isArray(res) ? res : (res?.data || []);
       setBatches(batchesData);
+      
+      // Load relations for all batches
+      await loadBatchRelations(batchesData);
       
       sessionStorage.setItem(CACHE_KEY, JSON.stringify({
         data: batchesData,
@@ -336,6 +376,26 @@ export const BatchesPage = () => {
     );
   };
 
+  const forceRemove = async (id) => {
+    showConfirmation(
+      'Force Delete Department',
+      'This will permanently delete the department and ALL related data including students, courses, sessions, enrollments, attendance records, and scan records.\n\nThis action cannot be undone. Are you absolutely sure?',
+      async () => {
+        try {
+          await apiClient.delete(`/api/batches/${id}?force=true`);
+          showSuccess('Department and all related data deleted successfully!');
+          sessionStorage.removeItem(CACHE_KEY);
+          await load(false);
+        } catch (e) {
+          showError(e.message || 'Failed to force delete');
+        }
+      },
+      'danger',
+      'Force Delete All',
+      'Cancel'
+    );
+  };
+
   const deleteBatch = async (year) => {
     const deptCount = groupedBatches[year].length;
     const deptText = deptCount === 1 ? 'department' : 'departments';
@@ -381,6 +441,34 @@ export const BatchesPage = () => {
         showError(e.message || 'Failed to delete batch');
       }
     }
+  };
+
+  const forceBatchDelete = async (year) => {
+    const deptCount = groupedBatches[year].length;
+    const deptText = deptCount === 1 ? 'department' : 'departments';
+    
+    showConfirmation(
+      'Force Delete Entire Batch',
+      `This will permanently delete ${year} batch with all ${deptCount} ${deptText} and ALL related data including students, courses, sessions, enrollments, attendance records, and scan records.\n\nThis action cannot be undone. Are you absolutely sure?`,
+      async () => {
+        try {
+          // Force delete all departments in this batch
+          const deletePromises = groupedBatches[year].map(batch => 
+            apiClient.delete(`/api/batches/${batch._id}?force=true`)
+          );
+          
+          await Promise.all(deletePromises);
+          showSuccess(`${year} batch and all related data deleted successfully!`);
+          sessionStorage.removeItem(CACHE_KEY);
+          await load(false);
+        } catch (e) {
+          showError(e.message || 'Failed to force delete batch');
+        }
+      },
+      'danger',
+      'Force Delete All',
+      'Cancel'
+    );
   };
 
   const openEditBatchYear = (year) => {
@@ -564,16 +652,29 @@ export const BatchesPage = () => {
                     >
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteBatch(year);
-                      }}
-                      className="sm:opacity-0 sm:group-hover:opacity-100 p-1.5 sm:p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                      title="Delete Batch"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {batchYearHasRelations(year) ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          forceBatchDelete(year);
+                        }}
+                        className="sm:opacity-0 sm:group-hover:opacity-100 p-1.5 sm:p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
+                        title="Force Delete Batch (Delete with all related data)"
+                      >
+                        <Trash2 className="w-4 h-4 stroke-2" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteBatch(year);
+                        }}
+                        className="sm:opacity-0 sm:group-hover:opacity-100 p-1.5 sm:p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        title="Delete Batch"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -621,13 +722,23 @@ export const BatchesPage = () => {
                                   >
                                     <Edit className="w-4 h-4"/>
                                   </button>
-                                  <button 
-                                    onClick={() => remove(batch._id)} 
-                                    className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" 
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-4 h-4"/>
-                                  </button>
+                                  {batchRelations[batch._id]?.hasRelatedData ? (
+                                    <button 
+                                      onClick={() => forceRemove(batch._id)} 
+                                      className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors" 
+                                      title="Force Delete (Delete with all related data)"
+                                    >
+                                      <Trash2 className="w-4 h-4 stroke-2"/>
+                                    </button>
+                                  ) : (
+                                    <button 
+                                      onClick={() => remove(batch._id)} 
+                                      className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" 
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-4 h-4"/>
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -665,28 +776,38 @@ export const BatchesPage = () => {
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="flex gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                               <button 
                                 onClick={() => setViewing(batch)} 
-                                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 rounded-lg transition-colors text-sm font-medium"
+                                className="flex items-center justify-center gap-2 px-3 py-2 text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 rounded-lg transition-colors text-sm font-medium"
                               >
                                 <Eye className="w-4 h-4"/>
                                 View
                               </button>
                               <button 
                                 onClick={() => openEdit(batch)} 
-                                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors text-sm font-medium"
+                                className="flex items-center justify-center gap-2 px-3 py-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors text-sm font-medium"
                               >
                                 <Edit className="w-4 h-4"/>
                                 Edit
                               </button>
-                              <button 
-                                onClick={() => remove(batch._id)} 
-                                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-sm font-medium"
-                              >
-                                <Trash2 className="w-4 h-4"/>
-                                Delete
-                              </button>
+                              {batchRelations[batch._id]?.hasRelatedData ? (
+                                <button 
+                                  onClick={() => forceRemove(batch._id)} 
+                                  className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg transition-colors text-sm font-medium"
+                                >
+                                  <Trash2 className="w-4 h-4 stroke-2"/>
+                                  Force Delete
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => remove(batch._id)} 
+                                  className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-sm font-medium"
+                                >
+                                  <Trash2 className="w-4 h-4"/>
+                                  Delete
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -47,6 +47,7 @@ router.get('/sessions', requireAuth, sessionsController.querySessions);
 router.get('/courses/:courseId/sessions', requireAuth, sessionsController.getCourseSessions);
 router.post('/courses/:courseId/sessions', requireAuth, requireRole(['admin', 'instructor']), sessionsController.createSession);
 router.get('/sessions/:sessionId', requireAuth, sessionsController.getSession);
+router.get('/sessions/:sessionId/relations', requireAuth, sessionsController.getSessionRelations);
 router.patch('/sessions/:sessionId/status', requireAuth, requireRole(['admin', 'instructor']), sessionsController.updateSessionStatus);
 router.put('/sessions/:sessionId', requireAuth, requireRole(['admin', 'instructor']), sessionsController.updateSession);
 router.delete('/sessions/:sessionId', requireAuth, requireRole(['admin', 'instructor']), sessionsController.deleteSession);
@@ -72,6 +73,71 @@ router.post('/scans/test-broadcast', (req, res) => {
   res.json({ success: true, message: 'Test broadcast sent' });
 });
 
+// Test endpoint to verify session timing validation (for debugging)
+router.post('/scans/test-timing', async (req, res) => {
+  try {
+    const { registrationNo, sessionId } = req.body;
+    
+    if (!registrationNo || !sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'registrationNo and sessionId required'
+      });
+    }
+
+    // Find the session
+    const session = await (await import('../models/ClassSession.js')).ClassSession.findById(sessionId).populate('courseId');
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
+
+    // Check timing validation
+    const now = new Date();
+    const sessionStartIso = `${session.date}T${session.startTime}:00Z`;
+    const sessionStart = new Date(sessionStartIso);
+    const EARLY_ACCESS_MINUTES = 15;
+    const earliestLiveTime = new Date(sessionStart.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
+    
+    const canAttend = now >= earliestLiveTime;
+    const minutesUntilStart = Math.ceil((sessionStart.getTime() - now.getTime()) / (60 * 1000));
+    const minutesUntilEarlyAccess = Math.ceil((earliestLiveTime.getTime() - now.getTime()) / (60 * 1000));
+
+    res.json({
+      success: true,
+      data: {
+        session: {
+          id: session._id,
+          courseCode: session.courseId.code,
+          date: session.date,
+          startTime: session.startTime,
+          status: session.status
+        },
+        timing: {
+          now: now.toISOString(),
+          sessionStart: sessionStart.toISOString(),
+          earliestLiveTime: earliestLiveTime.toISOString(),
+          canAttend,
+          minutesUntilStart,
+          minutesUntilEarlyAccess: minutesUntilEarlyAccess > 0 ? minutesUntilEarlyAccess : 0
+        },
+        validation: {
+          statusCheck: session.status === 'live',
+          timingCheck: canAttend,
+          overallValid: session.status === 'live' && canAttend
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 router.get('/sessions/:sessionId/attendance', requireAuth, attendanceController.getAttendanceBySession);
 router.put('/sessions/:sessionId/attendance/:studentId', requireAuth, requireRole(['admin', 'instructor']), attendanceController.updateAttendance);
 router.get('/students/:studentId/attendance', requireAuth, attendanceController.getAttendanceByStudent);
@@ -94,6 +160,7 @@ router.get('/analytics/top-attendees', requireAuth, studentAnalyticsController.g
 // Batches
 router.get('/batches', requireAuth, batchesController.listBatches);
 router.post('/batches', requireAuth, requireRole(['admin']), batchesController.createBatch);
+router.get('/batches/:id/relations', requireAuth, batchesController.getBatchRelations);
 router.put('/batches/:id', requireAuth, requireRole(['admin']), batchesController.updateBatch);
 router.delete('/batches/:id', requireAuth, requireRole(['admin']), batchesController.deleteBatch);
 

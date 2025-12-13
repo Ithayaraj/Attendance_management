@@ -209,6 +209,98 @@ export const deleteBatch = async (req, res, next) => {
   }
 };
 
+export const getBatchRelations = async (req, res, next) => {
+  try {
+    const batchId = req.params.id;
+
+    const batch = await Batch.findById(batchId);
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: 'Batch not found'
+      });
+    }
+
+    // Check if there are related records for this batch (department + year + semester)
+    const batchCriteria = {
+      department: batch.department,
+      year: batch.currentYear,
+      semester: batch.currentSemester
+    };
+
+    const [studentCount, courseCount, sessionCount] = await Promise.all([
+      Student.countDocuments(batchCriteria),
+      (await import('../models/Course.js')).Course.countDocuments(batchCriteria),
+      (await import('../models/ClassSession.js')).ClassSession.countDocuments(batchCriteria)
+    ]);
+
+    // Also count enrollments, attendance records, and scans
+    let enrollmentCount = 0;
+    let attendanceCount = 0;
+    let scanCount = 0;
+
+    if (studentCount > 0 || courseCount > 0 || sessionCount > 0) {
+      const students = await Student.find(batchCriteria, '_id');
+      const studentIds = students.map(s => s._id);
+      
+      const courses = await (await import('../models/Course.js')).Course.find(batchCriteria, '_id');
+      const courseIds = courses.map(c => c._id);
+      
+      const sessions = await (await import('../models/ClassSession.js')).ClassSession.find(batchCriteria, '_id');
+      const sessionIds = sessions.map(s => s._id);
+
+      [enrollmentCount, attendanceCount, scanCount] = await Promise.all([
+        studentIds.length > 0 || courseIds.length > 0 ? 
+          (await import('../models/Enrollment.js')).Enrollment.countDocuments({
+            $or: [
+              ...(studentIds.length > 0 ? [{ studentId: { $in: studentIds } }] : []),
+              ...(courseIds.length > 0 ? [{ courseId: { $in: courseIds } }] : [])
+            ]
+          }) : 0,
+        sessionIds.length > 0 || studentIds.length > 0 ? 
+          (await import('../models/AttendanceRecord.js')).AttendanceRecord.countDocuments({
+            $or: [
+              ...(sessionIds.length > 0 ? [{ sessionId: { $in: sessionIds } }] : []),
+              ...(studentIds.length > 0 ? [{ studentId: { $in: studentIds } }] : [])
+            ]
+          }) : 0,
+        sessionIds.length > 0 || courseIds.length > 0 ? 
+          (await import('../models/Scan.js')).Scan.countDocuments({
+            $or: [
+              ...(sessionIds.length > 0 ? [{ sessionId: { $in: sessionIds } }] : []),
+              ...(courseIds.length > 0 ? [{ courseId: { $in: courseIds } }] : [])
+            ]
+          }) : 0
+      ]);
+    }
+
+    const hasRelatedData = studentCount > 0 || courseCount > 0 || sessionCount > 0 || 
+                          enrollmentCount > 0 || attendanceCount > 0 || scanCount > 0;
+
+    res.json({
+      success: true,
+      data: {
+        hasRelatedData,
+        relatedData: {
+          students: studentCount,
+          courses: courseCount,
+          sessions: sessionCount,
+          enrollments: enrollmentCount,
+          attendanceRecords: attendanceCount,
+          scanRecords: scanCount
+        },
+        batchInfo: {
+          department: batch.department,
+          year: batch.currentYear,
+          semester: batch.currentSemester
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updateBatch = async (req, res, next) => {
   try {
     const { id } = req.params;

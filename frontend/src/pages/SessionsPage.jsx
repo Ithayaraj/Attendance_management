@@ -28,6 +28,9 @@ export const SessionsPage = () => {
   const [activeGlobalSessions, setActiveGlobalSessions] = useState([]);
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingSession, setViewingSession] = useState(null);
+  const [sessionRelations, setSessionRelations] = useState({});
+
+
 
   // Modal states
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -54,6 +57,64 @@ export const SessionsPage = () => {
       type
     });
     setShowConfirmModal(true);
+  };
+
+  // Check if session has relations
+  const checkSessionRelations = async (sessionId) => {
+    try {
+      const response = await apiClient.get(`/api/sessions/${sessionId}/relations`);
+      const data = response.data?.data || {};
+      
+      // Ensure we always return a proper structure
+      return {
+        hasRelatedData: data.hasRelatedData || false,
+        relatedData: data.relatedData || {
+          attendanceRecords: 0,
+          scanRecords: 0,
+          activeDevices: 0
+        }
+      };
+    } catch (e) {
+      console.error('Failed to check session relations:', e.message);
+      // Return default structure on error
+      return {
+        hasRelatedData: false,
+        relatedData: {
+          attendanceRecords: 0,
+          scanRecords: 0,
+          activeDevices: 0
+        }
+      };
+    }
+  };
+
+  // Load session relations for all sessions
+  const loadSessionRelations = async (sessionsList) => {
+    try {
+      const relations = {};
+      
+      const relationPromises = sessionsList.map(async (session) => {
+        try {
+          const sessionRelation = await checkSessionRelations(session._id);
+          relations[session._id] = sessionRelation;
+        } catch (error) {
+          console.error('Error checking relations for session', session._id, ':', error);
+          // Default to no relations if API call fails
+          relations[session._id] = { hasRelatedData: false };
+        }
+      });
+      
+      await Promise.all(relationPromises);
+      setSessionRelations(relations);
+    } catch (e) {
+      console.error('Failed to load session relations:', e);
+      // Set default relations for all sessions if the entire operation fails
+      const defaultRelations = {};
+      sessionsList.forEach(session => {
+        defaultRelations[session._id] = { hasRelatedData: false };
+      });
+      setSessionRelations(defaultRelations);
+    }
   };
 
   // Extract year and semester from course code
@@ -267,6 +328,9 @@ export const SessionsPage = () => {
       const sessionsData = res.data || [];
       setSessions(sessionsData);
 
+      // Load relations for all sessions
+      await loadSessionRelations(sessionsData);
+
       // Cache sessions for this course
       sessionStorage.setItem(`sessions_${courseId}`, JSON.stringify({
         data: sessionsData,
@@ -319,6 +383,9 @@ export const SessionsPage = () => {
       });
 
       setSessions(flatSessions);
+      
+      // Load relations for all sessions
+      await loadSessionRelations(flatSessions);
     } catch (e) {
       console.error('Failed to load sessions:', e);
       setSessions([]);
@@ -339,9 +406,20 @@ export const SessionsPage = () => {
     );
 
     // Check for sessions that should be live (started but not ended)
-    const sessionsToLive = sessionsList.filter(s =>
-      s.status === 'scheduled' && shouldBeLive(s)
-    );
+    // Only update to live if the session has actually started (with 15min early access)
+    const sessionsToLive = sessionsList.filter(s => {
+      if (s.status !== 'scheduled') return false;
+      
+      const now = new Date();
+      const sessionStartDate = getSessionDateTime(s.date, s.startTime);
+      if (!sessionStartDate) return false;
+      
+      // Allow 15 minutes early access (same as backend)
+      const EARLY_ACCESS_MINUTES = 15;
+      const earliestLiveTime = new Date(sessionStartDate.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
+      
+      return now >= earliestLiveTime && shouldBeLive(s);
+    });
 
     // Update expired sessions to closed
     if (expiredSessions.length > 0) {
@@ -705,7 +783,12 @@ export const SessionsPage = () => {
       const res = await apiClient.post(`/api/courses/${selectedCourseId}/sessions`, payload);
       const session = res.data;
       if (form.goLive && session?._id) {
-        await apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'live' });
+        try {
+          await apiClient.patch(`/api/sessions/${session._id}/status`, { status: 'live' });
+        } catch (statusError) {
+          // If setting to live fails due to timing, show warning but don't fail the creation
+          showWarning(`Session created but could not be set to live: ${statusError.message || 'Timing validation failed'}`);
+        }
       }
       setShowCreate(false);
       showSuccess('Session created successfully!', 'Success');
@@ -839,7 +922,11 @@ export const SessionsPage = () => {
         sessionStorage.removeItem(BATCHES_CACHE_KEY);
         
         // Refresh sessions and batch active sessions status
-        await loadSessions(selectedCourseId);
+        if (selectedCourseId) {
+          await loadSessions(selectedCourseId);
+        } else {
+          await loadAllCourseSessions();
+        }
         await loadBatchActiveSessions(batches);
         
         // Also refresh courses to update the live indicators in dropdown
@@ -882,6 +969,39 @@ export const SessionsPage = () => {
       () => attemptDelete(false),
       'danger',
       'Delete',
+      'Cancel'
+    );
+  };
+
+  const forceRemove = async (s) => {
+    showConfirmation(
+      'Force Delete Session',
+      'This will permanently delete the session and ALL related data including attendance records, scan records, and device associations.\n\nThis action cannot be undone. Are you absolutely sure?',
+      async () => {
+        try {
+          await apiClient.delete(`/api/sessions/${s._id}?force=true`);
+          showSuccess('Session and all related data deleted successfully!');
+          
+          // Clear all relevant caches to ensure fresh data
+          sessionStorage.removeItem(`sessions_${selectedCourseId}`);
+          sessionStorage.removeItem(BATCHES_CACHE_KEY);
+          
+          // Refresh sessions and batch active sessions status
+          if (selectedCourseId) {
+            await loadSessions(selectedCourseId);
+          } else {
+            await loadAllCourseSessions();
+          }
+          await loadBatchActiveSessions(batches);
+          
+          // Also refresh courses to update the live indicators in dropdown
+          await loadCourses();
+        } catch (e) {
+          showError(e.message || 'Failed to force delete session');
+        }
+      },
+      'danger',
+      'Force Delete All',
       'Cancel'
     );
   };
@@ -1013,6 +1133,7 @@ export const SessionsPage = () => {
               <RefreshCw className="w-4 h-4" />
               <span>Refresh</span>
             </button>
+
             <button
               onClick={() => setShowCreate(true)}
               disabled={!selectedCourseId}
@@ -1084,7 +1205,14 @@ export const SessionsPage = () => {
                   paginatedSessions.map(s => (
                     <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                       <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">
-                        {s.courseId?.code || 'N/A'}
+                        <div className="flex items-center gap-2">
+                          <span>{s.courseId?.code || 'N/A'}</span>
+                          {sessionRelations[s._id]?.hasRelatedData && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" title="Has related data">
+                              📊
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{s.date}</td>
                       <td className="px-6 py-4 text-sm text-slate-900 dark:text-white">{s.startTime} - {s.endTime}</td>
@@ -1110,7 +1238,37 @@ export const SessionsPage = () => {
                           <div className="flex items-center justify-end gap-2">
                             <button onClick={() => openView(s)} className="p-2 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded-lg" title="View"><Eye className="w-4 h-4" /></button>
                             <button onClick={() => openEdit(s)} className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Edit"><Edit className="w-4 h-4" /></button>
-                            <button onClick={() => remove(s)} className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                            {(() => {
+                              const relations = sessionRelations[s._id];
+                              const hasRelatedData = relations?.hasRelatedData;
+                              
+                              // Show loading state if relations haven't been loaded yet
+                              if (relations === undefined) {
+                                return (
+                                  <button disabled className="p-2 text-gray-400 rounded-lg" title="Loading relations...">
+                                    <LoadingSpinner size="sm" />
+                                  </button>
+                                );
+                              }
+                              
+                              return hasRelatedData ? (
+                                <button 
+                                  onClick={() => forceRemove(s)} 
+                                  className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg" 
+                                  title={`Force Delete (Has ${relations.relatedData?.attendanceRecords || 0} attendance, ${relations.relatedData?.scanRecords || 0} scans, ${relations.relatedData?.activeDevices || 0} devices)`}
+                                >
+                                  <Trash2 className="w-4 h-4 stroke-2" />
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => remove(s)} 
+                                  className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" 
+                                  title="Delete (No related data)"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              );
+                            })()}
                           </div>
                         </td>
                       )}
