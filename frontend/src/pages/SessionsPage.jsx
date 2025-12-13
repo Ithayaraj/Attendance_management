@@ -29,6 +29,7 @@ export const SessionsPage = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingSession, setViewingSession] = useState(null);
   const [sessionRelations, setSessionRelations] = useState({});
+  const [currentTime, setCurrentTime] = useState(new Date());
 
 
 
@@ -321,6 +322,33 @@ export const SessionsPage = () => {
     return isSessionStarted(session) && !isSessionEnded(session);
   };
 
+  // Calculate time remaining until session goes live (with 15min early access)
+  const getTimeUntilLive = (session) => {
+    if (!session.date || !session.startTime) return null;
+
+    const now = new Date();
+    const sessionStartDate = getSessionDateTime(session.date, session.startTime);
+    if (!sessionStartDate) return null;
+
+    // 15 minutes early access
+    const EARLY_ACCESS_MINUTES = 15;
+    const earliestLiveTime = new Date(sessionStartDate.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
+
+    const diffMs = earliestLiveTime.getTime() - now.getTime();
+    
+    if (diffMs <= 0) return null; // Already time to go live
+
+    const diffMinutes = Math.ceil(diffMs / (60 * 1000));
+    
+    if (diffMinutes < 60) {
+      return `${diffMinutes}m`;
+    } else {
+      const hours = Math.floor(diffMinutes / 60);
+      const mins = diffMinutes % 60;
+      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    }
+  };
+
   const loadSessions = useCallback(async (courseId) => {
     try {
       setLoading(true);
@@ -418,7 +446,7 @@ export const SessionsPage = () => {
       const EARLY_ACCESS_MINUTES = 15;
       const earliestLiveTime = new Date(sessionStartDate.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
       
-      return now >= earliestLiveTime && shouldBeLive(s);
+      return now && shouldBeLive(s);
     });
 
     // Update expired sessions to closed
@@ -626,6 +654,15 @@ export const SessionsPage = () => {
       }
     }
   }, [selectedCourseId, selectedBatch, filteredCourses, loadSessions, loadAllCourseSessions, checkAndUpdateSessionStatuses]);
+
+  // Update current time every minute to refresh countdown timers
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60 * 1000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Periodically check and update session statuses (every minute)
   useEffect(() => {
@@ -914,8 +951,12 @@ export const SessionsPage = () => {
     const attemptDelete = async (forceDelete = false) => {
       try {
         const url = forceDelete ? `/api/sessions/${s._id}?force=true` : `/api/sessions/${s._id}`;
-        await apiClient.delete(url);
-        showSuccess('Session deleted successfully!', 'Success');
+        const response = await apiClient.delete(url);
+        
+        const message = forceDelete 
+          ? 'Session and all related data deleted successfully!' 
+          : 'Session deleted successfully!';
+        showSuccess(message, 'Success');
         
         // Clear all relevant caches to ensure fresh data
         sessionStorage.removeItem(`sessions_${selectedCourseId}`);
@@ -932,9 +973,11 @@ export const SessionsPage = () => {
         // Also refresh courses to update the live indicators in dropdown
         await loadCourses();
       } catch (err) {
+        console.error('Delete error:', err);
+        
         if (err.response?.status === 409 && err.response?.data?.requiresForceDelete) {
           // Session has related data, show force delete confirmation
-          const relatedData = err.response.data.relatedData;
+          const relatedData = err.response.data.relatedData || {};
           const dataDetails = [];
           
           if (relatedData.attendanceRecords > 0) {
@@ -947,14 +990,16 @@ export const SessionsPage = () => {
             dataDetails.push(`${relatedData.activeDevices} active device${relatedData.activeDevices !== 1 ? 's' : ''}`);
           }
 
-          const message = `This session has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+          const message = dataDetails.length > 0 
+            ? `This session has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`
+            : 'This session has related data that will also be deleted. This action cannot be undone. Are you sure you want to proceed?';
 
           showConfirmation(
             'Force Delete Required',
             message,
             () => attemptDelete(true),
             'danger',
-            'Delete All',
+            'Delete All Data',
             'Cancel'
           );
         } else {
@@ -963,24 +1008,44 @@ export const SessionsPage = () => {
       }
     };
 
+    // For sessions without related data, show simple confirmation
     showConfirmation(
       'Delete Session',
-      'Delete this session? This cannot be undone.',
+      `Are you sure you want to delete this session?\n\nCourse: ${s.courseId?.code || 'N/A'}\nDate: ${s.date}\nTime: ${s.startTime} - ${s.endTime}\n\nThis action cannot be undone.`,
       () => attemptDelete(false),
       'danger',
-      'Delete',
+      'Delete Session',
       'Cancel'
     );
   };
 
   const forceRemove = async (s) => {
+    // Get the relation data for this session to show specific details
+    const relations = sessionRelations[s._id];
+    const relatedData = relations?.relatedData || {};
+    
+    const dataDetails = [];
+    if (relatedData.attendanceRecords > 0) {
+      dataDetails.push(`• ${relatedData.attendanceRecords} attendance record${relatedData.attendanceRecords !== 1 ? 's' : ''}`);
+    }
+    if (relatedData.scanRecords > 0) {
+      dataDetails.push(`• ${relatedData.scanRecords} scan record${relatedData.scanRecords !== 1 ? 's' : ''}`);
+    }
+    if (relatedData.activeDevices > 0) {
+      dataDetails.push(`• ${relatedData.activeDevices} active device${relatedData.activeDevices !== 1 ? 's' : ''}`);
+    }
+
+    const detailsText = dataDetails.length > 0 
+      ? `\n\nThis will delete:\n${dataDetails.join('\n')}`
+      : '\n\nThis will delete all associated data.';
+
     showConfirmation(
-      'Force Delete Session',
-      'This will permanently delete the session and ALL related data including attendance records, scan records, and device associations.\n\nThis action cannot be undone. Are you absolutely sure?',
+      'Force Delete Session & All Data',
+      `⚠️ WARNING: This will permanently delete the session and ALL related data.${detailsText}\n\nSession Details:\n• Course: ${s.courseId?.code || 'N/A'}\n• Date: ${s.date}\n• Time: ${s.startTime} - ${s.endTime}\n\nThis action cannot be undone. Are you absolutely sure?`,
       async () => {
         try {
           await apiClient.delete(`/api/sessions/${s._id}?force=true`);
-          showSuccess('Session and all related data deleted successfully!');
+          showSuccess('Session and all related data deleted successfully!', 'Force Delete Complete');
           
           // Clear all relevant caches to ensure fresh data
           sessionStorage.removeItem(`sessions_${selectedCourseId}`);
@@ -997,11 +1062,12 @@ export const SessionsPage = () => {
           // Also refresh courses to update the live indicators in dropdown
           await loadCourses();
         } catch (e) {
+          console.error('Force delete error:', e);
           showError(e.message || 'Failed to force delete session');
         }
       },
       'danger',
-      'Force Delete All',
+      'Yes, Delete Everything',
       'Cancel'
     );
   };
@@ -1229,9 +1295,19 @@ export const SessionsPage = () => {
                         )}
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${s.status === 'live' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : s.status === 'scheduled' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
-                          {s.status}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${s.status === 'live' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : s.status === 'scheduled' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
+                            {s.status}
+                          </span>
+                          {s.status === 'scheduled' && (() => {
+                            const timeUntil = getTimeUntilLive(s);
+                            return timeUntil ? (
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                Live in {timeUntil}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                       </td>
                       {selectedCourseId && (
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -1254,8 +1330,8 @@ export const SessionsPage = () => {
                               return hasRelatedData ? (
                                 <button 
                                   onClick={() => forceRemove(s)} 
-                                  className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg" 
-                                  title={`Force Delete (Has ${relations.relatedData?.attendanceRecords || 0} attendance, ${relations.relatedData?.scanRecords || 0} scans, ${relations.relatedData?.activeDevices || 0} devices)`}
+                                  className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800" 
+                                  title={`Force Delete Required - Has related data: ${relations.relatedData?.attendanceRecords || 0} attendance records, ${relations.relatedData?.scanRecords || 0} scan records, ${relations.relatedData?.activeDevices || 0} active devices`}
                                 >
                                   <Trash2 className="w-4 h-4 stroke-2" />
                                 </button>
@@ -1263,7 +1339,7 @@ export const SessionsPage = () => {
                                 <button 
                                   onClick={() => remove(s)} 
                                   className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" 
-                                  title="Delete (No related data)"
+                                  title="Delete Session (No related data)"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>

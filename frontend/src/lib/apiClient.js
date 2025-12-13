@@ -36,7 +36,14 @@ class ApiClient {
           window.dispatchEvent(new CustomEvent('auth:logout'));
           throw new Error('Session expired. Please login again.');
         }
-        throw new Error(data.message || 'Request failed');
+        
+        // Create an error object that includes response details for proper error handling
+        const error = new Error(data.message || 'Request failed');
+        error.response = {
+          status: response.status,
+          data: data
+        };
+        throw error;
       }
 
       return data;

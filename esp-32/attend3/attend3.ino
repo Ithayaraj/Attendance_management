@@ -19,6 +19,8 @@ void loadOfflineQueue();
 void clearOfflineQueue();
 bool ensureWiFi(uint32_t timeoutMs);
 void processID(String rawData);
+bool checkSessionStatus();
+bool isSessionActive();
 
 // LCD I2C address (0x27 or 0x3F, உங்கள் module-க்கு எந்த address இருக்குனு I2C Scanner code run பண்ணி check பண்ணுங்க)
 // For ESP32 compatibility, install "LiquidCrystal I2C" by Marco Schwartz from Library Manager
@@ -38,8 +40,9 @@ const char* API_BASE = "https://attendance-management-uere.vercel.app";
 // const char* API_BASE = "https://192.168.43.214:5000";
 const char* DEVICE_KEY = "esp32-dev-key";      // auto-created on backend startup
 
-// Endpoint path
+// Endpoint paths
 const char* SCAN_ENDPOINT = "/api/scans/ingest";
+const char* SESSION_STATUS_ENDPOINT = "/api/analytics/current-sessions";
 
 // Attendance tracking (local buffer for debug/log display)
 String attendanceLog[50]; // Store up to 50 attendance records
@@ -48,6 +51,13 @@ unsigned long lastScanTime = 0;
 unsigned long lastWiFiCheck = 0;
 unsigned long lastLEDBlinkTime = 0; // For WiFi status LED blinking
 bool wifiConnected = false; // Track WiFi connection status
+
+// Session tracking for scanner online status
+unsigned long lastSessionCheck = 0;
+bool hasActiveSessions = false;
+String currentSessionEndTime = "";
+String currentSessionDate = "";
+#define SESSION_CHECK_INTERVAL 60000  // Check session status every 60 seconds
 
 // ===== Offline Queue System =====
 // Structure to store offline scans with timestamp
@@ -428,12 +438,23 @@ void setup() {
     Serial.println("Scanner: Initialized successfully");
   }
   
+  // Check initial session status if WiFi is connected
+  if (wifiConnected) {
+    Serial.println("Checking initial session status...");
+    checkSessionStatus();
+  }
+  
   // Ready state with welcoming message
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Welcome!");
+  if (hasActiveSessions) {
+    lcd.print("Session Active");
+  } else {
+    lcd.print("Welcome!");
+  }
   lcd.setCursor(0, 1);
   lcd.print("Scan Your ID");
+  
   // LED status depends on WiFi: ON if disconnected, will blink if connected (handled in loop)
   if (!wifiConnected) {
     digitalWrite(BLUE_LED_PIN, HIGH); // Blue LED ON (steady) when WiFi not connected
@@ -575,7 +596,11 @@ void loop() {
       delay(1000);
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Ready");
+      if (hasActiveSessions) {
+        lcd.print("Session Active");
+      } else {
+        lcd.print("Ready");
+      }
       lcd.setCursor(0, 1);
       lcd.print("Scan Your ID");
       // LED will return to WiFi status (blink if connected, ON if not) in loop
@@ -647,7 +672,11 @@ void loop() {
       
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Ready");
+      if (hasActiveSessions) {
+        lcd.print("Session Active");
+      } else {
+        lcd.print("Ready");
+      }
       lcd.setCursor(0, 1);
       lcd.print("Scan Your ID");
       // LED will be controlled by WiFi status (blink if connected, ON if not)
@@ -656,6 +685,24 @@ void loop() {
       // Only process if cooldown period has passed (prevent recursive loop)
       if (offlineQueueCount > 0 && (millis() - lastQueueProcessTime >= QUEUE_PROCESS_INTERVAL)) {
         processOfflineQueue();
+      }
+    }
+  }
+  
+  // Check session status periodically to keep scanner online until session ends
+  if (millis() - lastSessionCheck > SESSION_CHECK_INTERVAL) {
+    lastSessionCheck = millis();
+    if (WiFi.status() == WL_CONNECTED) {
+      bool sessionCheckResult = checkSessionStatus();
+      if (sessionCheckResult) {
+        // Update LCD to show session is active
+        if (hasActiveSessions) {
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Session Active");
+          lcd.setCursor(0, 1);
+          lcd.print("Scan Your ID");
+        }
       }
     }
   }
@@ -898,7 +945,11 @@ void processID(String rawData) {
   // Reset to ready state with user-friendly message
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Ready");
+  if (hasActiveSessions) {
+    lcd.print("Session Active");
+  } else {
+    lcd.print("Ready");
+  }
   lcd.setCursor(0, 1);
   lcd.print("Scan Your ID");
   // Restore LED to WiFi status: blink if connected, ON if disconnected (handled in loop)
@@ -1511,4 +1562,138 @@ void clearOfflineQueue() {
   offlineQueueCount = 0;
   preferences.clear();
   Serial.println("Offline queue cleared");
+}
+
+// ===== Session Status Checking Functions =====
+
+// Check if there are active sessions to keep scanner online
+bool checkSessionStatus() {
+  Serial.println("🔍 Checking session status...");
+  
+  // Error handling: Check WiFi connection
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WARNING: WiFi not connected, cannot check session status");
+    hasActiveSessions = false;
+    return false;
+  }
+
+  WiFiClientSecure client;
+  HTTPClient http;
+  
+  // Error handling: Validate API configuration
+  if (strlen(API_BASE) == 0) {
+    Serial.println("ERROR: API_BASE not configured");
+    return false;
+  }
+  
+  // Use HTTPS with certificate validation disabled for ESP32
+  client.setInsecure();
+  
+  String url = String(API_BASE) + String(SESSION_STATUS_ENDPOINT);
+  
+  http.setTimeout(10000); // 10 second timeout
+  
+  // Error handling: Check if HTTP client initialization succeeds
+  bool began = http.begin(client, url);
+  if (!began) {
+    Serial.println("ERROR: HTTP client initialization failed for session check");
+    return false;
+  }
+  
+  // Set headers
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-device-key", DEVICE_KEY);
+  
+  Serial.print("GET URL: ");
+  Serial.println(url);
+  
+  // Send GET request
+  int code = http.GET();
+  String resp = http.getString();
+  http.end();
+  
+  Serial.print("Session Check HTTP Status Code: ");
+  Serial.println(code);
+  Serial.print("Session Check Response: ");
+  Serial.println(resp);
+  
+  // Handle successful response (2xx)
+  if (code == 200) {
+    // Parse the JSON response to check for active sessions
+    int successPos = resp.indexOf("\"success\":true");
+    if (successPos >= 0) {
+      // Look for data array with sessions
+      int dataPos = resp.indexOf("\"data\":[");
+      if (dataPos >= 0) {
+        // Check if there are any live sessions
+        int livePos = resp.indexOf("\"status\":\"live\"");
+        if (livePos >= 0) {
+          hasActiveSessions = true;
+          Serial.println("✅ Found active live sessions - keeping scanner online");
+          
+          // Try to extract session end time for better tracking
+          int endTimePos = resp.indexOf("\"endTime\":", livePos);
+          if (endTimePos >= 0) {
+            int q1 = resp.indexOf('"', endTimePos + 10);
+            int q2 = resp.indexOf('"', q1 + 1);
+            if (q1 >= 0 && q2 > q1) {
+              currentSessionEndTime = resp.substring(q1 + 1, q2);
+              Serial.print("📅 Session ends at: ");
+              Serial.println(currentSessionEndTime);
+            }
+          }
+          
+          // Try to extract session date
+          int datePos = resp.indexOf("\"date\":", livePos);
+          if (datePos >= 0) {
+            int q1 = resp.indexOf('"', datePos + 7);
+            int q2 = resp.indexOf('"', q1 + 1);
+            if (q1 >= 0 && q2 > q1) {
+              currentSessionDate = resp.substring(q1 + 1, q2);
+              Serial.print("📅 Session date: ");
+              Serial.println(currentSessionDate);
+            }
+          }
+          
+          return true;
+        } else {
+          // Check for scheduled sessions that might start soon
+          int scheduledPos = resp.indexOf("\"status\":\"scheduled\"");
+          if (scheduledPos >= 0) {
+            hasActiveSessions = true;
+            Serial.println("⏰ Found scheduled sessions - keeping scanner ready");
+            return true;
+          } else {
+            hasActiveSessions = false;
+            Serial.println("❌ No active or scheduled sessions found");
+            return false;
+          }
+        }
+      } else {
+        hasActiveSessions = false;
+        Serial.println("❌ No session data found in response");
+        return false;
+      }
+    } else {
+      Serial.println("ERROR: Session check returned success:false");
+      hasActiveSessions = false;
+      return false;
+    }
+  } else {
+    Serial.print("ERROR: Session check failed with HTTP code ");
+    Serial.println(code);
+    hasActiveSessions = false;
+    return false;
+  }
+}
+
+// Check if current time is within active session period
+bool isSessionActive() {
+  if (!hasActiveSessions || currentSessionEndTime.length() == 0 || currentSessionDate.length() == 0) {
+    return hasActiveSessions; // Fallback to basic session check
+  }
+  
+  // Get current time (this is a simplified check - in production you'd want proper time sync)
+  // For now, we'll rely on the server-side session status checks
+  return hasActiveSessions;
 }

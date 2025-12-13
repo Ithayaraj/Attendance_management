@@ -283,10 +283,7 @@ export const DashboardPage = () => {
             </p>
           </div>
 
-          {/* Scanner Status */}
-          <div className="flex-shrink-0">
-            <DeviceStatusIndicator showSessionInfo={true} />
-          </div>
+
         </div>
       </div>
 

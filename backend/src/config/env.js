@@ -9,7 +9,7 @@ export const config = {
   port: process.env.PORT || 5000,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtExpiry: '2h',
-  refreshExpiry: '2h',
+  jwtExpiry: '12h',
+  refreshExpiry: '12h',
   defaultDeviceKey: process.env.DEFAULT_DEVICE_KEY || 'esp32-dev-key'
 };

@@ -5,6 +5,7 @@ import { connectDB } from './config/db.js';
 import { initWebSocket } from './realtime/ws.js';
 import { Student } from './models/Student.js';
 import { Device } from './models/Device.js';
+import { sessionScheduler } from './services/sessionScheduler.js';
 import crypto from 'crypto';
 
 const server = http.createServer(app);
@@ -38,6 +39,9 @@ const initializeServer = async () => {
   } catch (err) {
     console.error('Failed ensuring default device:', err);
   }
+
+  // Start session scheduler (auto-transition scheduled -> live -> closed)
+  sessionScheduler.start();
 
   // Start periodic device status cleanup (every 5 minutes)
   setInterval(async () => {
@@ -83,6 +87,7 @@ const initializeServer = async () => {
       console.log(`\n🚀 Server running on port ${config.port}`);
       console.log(`   Environment: ${config.nodeEnv}`);
       console.log(`   WebSocket available at ws://localhost:${config.port}/ws\n`);
+      console.log(`⏰ Session scheduler active (auto-transitions scheduled → live → closed)`);
       console.log(`📱 Device status cleanup running every 5 minutes (15min timeout)\n`);
     });
   }

@@ -274,7 +274,11 @@ export const getCurrentSessions = async () => {
       sessionEndDateTime.setDate(sessionEndDateTime.getDate() + 1);
     }
 
-    return now >= sessionStartDateTime && now < sessionEndDateTime;
+    // Allow 15 minutes early access for instructors to set up (consistent with sessionsController)
+    const EARLY_ACCESS_MINUTES = 15;
+    const earliestLiveTime = new Date(sessionStartDateTime.getTime() - (EARLY_ACCESS_MINUTES * 60 * 1000));
+
+    return now >= earliestLiveTime && now < sessionEndDateTime;
   };
 
   // Auto-update session statuses
@@ -308,11 +312,24 @@ export const getCurrentSessions = async () => {
       return true;
     }
 
-    // For scheduled sessions, include if they're today or tomorrow (to handle timezone differences)
-    // This ensures sessions scheduled for "tomorrow" in UTC but "today" in local time are shown
-    if (s.status === 'scheduled' && (s.date === today || s.date === yesterdayStr || s.date === tomorrowStr)) {
-      console.log(`  ✅ Including ${s.courseId?.code} - scheduled for ${s.date}`);
-      return true;
+    // For scheduled sessions, only include if they're starting within the next 2 hours
+    // This prevents showing sessions that are scheduled for much later in the day
+    if (s.status === 'scheduled') {
+      const [startHour, startMinute] = s.startTime.split(':').map(Number);
+      const sessionDate = new Date(s.date);
+      const sessionStartDateTime = new Date(sessionDate);
+      sessionStartDateTime.setHours(startHour, startMinute, 0, 0);
+      
+      // Include if session starts within the next 30 minutes (upcoming sessions)
+      const thirtyMinutesFromNow = new Date(now.getTime() + (30 * 60 * 1000));
+      
+      if (sessionStartDateTime <= thirtyMinutesFromNow) {
+        console.log(`  ✅ Including ${s.courseId?.code} - scheduled to start within 30 minutes`);
+        return true;
+      } else {
+        console.log(`  ❌ Filtered out ${s.courseId?.code} - scheduled too far in future (${s.startTime})`);
+        return false;
+      }
     }
 
     console.log(`  ❌ Filtered out ${s.courseId?.code} (${s.date}) - not currently active`);

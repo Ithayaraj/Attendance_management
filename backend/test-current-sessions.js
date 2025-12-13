@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { ClassSession } from './src/models/ClassSession.js';
+import { Course } from './src/models/Course.js';
 import { config } from './src/config/env.js';
 
 async function testCurrentSessions() {

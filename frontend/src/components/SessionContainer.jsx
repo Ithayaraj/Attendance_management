@@ -69,7 +69,19 @@ export const SessionContainer = ({ session, onClick }) => {
               <BookOpen className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
               <h4 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">{session.courseCode}</h4>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 truncate pl-6">{session.courseName}</p>
+            {/* Show course name more prominently for live sessions */}
+            {session.status === 'live' ? (
+              <div className="bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 rounded-lg px-3 py-2 mb-2 border border-green-200 dark:border-green-700/50">
+                <p className="text-sm font-semibold text-green-800 dark:text-green-200 text-center">
+                  📚 {session.courseName}
+                </p>
+                <p className="text-xs text-green-600 dark:text-green-300 text-center mt-1">
+                  Currently Online - Scanner Active
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600 dark:text-slate-300 truncate pl-6">{session.courseName}</p>
+            )}
           </div>
 
           {/* Time & Room */}

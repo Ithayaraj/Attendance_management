@@ -317,18 +317,27 @@ export const BatchesPage = () => {
   };
 
   const remove = async (id) => {
+    const batch = batches.find(b => b._id === id);
+    
     const attemptDelete = async (forceDelete = false) => {
       try {
         const url = forceDelete ? `/api/batches/${id}?force=true` : `/api/batches/${id}`;
-        await apiClient.delete(url);
-        showSuccess('Department deleted successfully!');
+        const response = await apiClient.delete(url);
+        
+        const message = forceDelete 
+          ? 'Department and all related data deleted successfully!' 
+          : 'Department deleted successfully!';
+        showSuccess(message, 'Success');
+        
         sessionStorage.removeItem(CACHE_KEY);
         await load(false);
       } catch (e) {
+        console.error('Delete error:', e);
+        
         if (e.response?.status === 409 && e.response?.data?.requiresForceDelete) {
           // Batch has related data, show force delete confirmation
-          const relatedData = e.response.data.relatedData;
-          const batchInfo = e.response.data.batchInfo;
+          const relatedData = e.response.data.relatedData || {};
+          const batchInfo = e.response.data.batchInfo || {};
           const dataDetails = [];
           
           if (relatedData.students > 0) {
@@ -350,48 +359,81 @@ export const BatchesPage = () => {
             dataDetails.push(`${relatedData.scanRecords} scan record${relatedData.scanRecords !== 1 ? 's' : ''}`);
           }
 
-          const message = `This department (${batchInfo.department} - Year ${batchInfo.year}, Semester ${batchInfo.semester}) has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`;
+          const message = dataDetails.length > 0 
+            ? `This department (${batchInfo.department || batch?.department || 'N/A'} - Year ${batchInfo.year || batch?.currentYear || 'N/A'}, Semester ${batchInfo.semester || batch?.currentSemester || 'N/A'}) has related data that will also be deleted:\n\n• ${dataDetails.join('\n• ')}\n\nThis action cannot be undone. Are you sure you want to proceed?`
+            : 'This department has related data that will also be deleted. This action cannot be undone. Are you sure you want to proceed?';
 
           showConfirmation(
             'Force Delete Required',
             message,
             () => attemptDelete(true),
             'danger',
-            'Delete All',
+            'Delete All Data',
             'Cancel'
           );
         } else {
-          showError(e.message || 'Failed to delete');
+          showError(e.message || 'Failed to delete department');
         }
       }
     };
 
+    // For departments without related data, show simple confirmation
     showConfirmation(
       'Delete Department',
-      'Are you sure you want to delete this department? This action cannot be undone.',
+      `Are you sure you want to delete this department?\n\nDepartment: ${batch?.department || 'N/A'}\nBatch Year: ${batch?.startYear || 'N/A'}\nCurrent: Year ${batch?.currentYear || 'N/A'}, Semester ${batch?.currentSemester || 'N/A'}\n\nThis action cannot be undone.`,
       () => attemptDelete(false),
       'danger',
-      'Delete',
+      'Delete Department',
       'Cancel'
     );
   };
 
   const forceRemove = async (id) => {
+    // Find the batch to get its details
+    const batch = batches.find(b => b._id === id);
+    const relations = batchRelations[id];
+    const relatedData = relations?.relatedData || {};
+    
+    const dataDetails = [];
+    if (relatedData.students > 0) {
+      dataDetails.push(`• ${relatedData.students} student${relatedData.students !== 1 ? 's' : ''}`);
+    }
+    if (relatedData.courses > 0) {
+      dataDetails.push(`• ${relatedData.courses} course${relatedData.courses !== 1 ? 's' : ''}`);
+    }
+    if (relatedData.sessions > 0) {
+      dataDetails.push(`• ${relatedData.sessions} session${relatedData.sessions !== 1 ? 's' : ''}`);
+    }
+    if (relatedData.enrollments > 0) {
+      dataDetails.push(`• ${relatedData.enrollments} enrollment${relatedData.enrollments !== 1 ? 's' : ''}`);
+    }
+    if (relatedData.attendanceRecords > 0) {
+      dataDetails.push(`• ${relatedData.attendanceRecords} attendance record${relatedData.attendanceRecords !== 1 ? 's' : ''}`);
+    }
+    if (relatedData.scanRecords > 0) {
+      dataDetails.push(`• ${relatedData.scanRecords} scan record${relatedData.scanRecords !== 1 ? 's' : ''}`);
+    }
+
+    const detailsText = dataDetails.length > 0 
+      ? `\n\nThis will delete:\n${dataDetails.join('\n')}`
+      : '\n\nThis will delete all associated data.';
+
     showConfirmation(
-      'Force Delete Department',
-      'This will permanently delete the department and ALL related data including students, courses, sessions, enrollments, attendance records, and scan records.\n\nThis action cannot be undone. Are you absolutely sure?',
+      'Force Delete Department & All Data',
+      `⚠️ WARNING: This will permanently delete the department and ALL related data.${detailsText}\n\nDepartment Details:\n• Department: ${batch?.department || 'N/A'}\n• Batch Year: ${batch?.startYear || 'N/A'}\n• Current: Year ${batch?.currentYear || 'N/A'}, Semester ${batch?.currentSemester || 'N/A'}\n\nThis action cannot be undone. Are you absolutely sure?`,
       async () => {
         try {
           await apiClient.delete(`/api/batches/${id}?force=true`);
-          showSuccess('Department and all related data deleted successfully!');
+          showSuccess('Department and all related data deleted successfully!', 'Force Delete Complete');
           sessionStorage.removeItem(CACHE_KEY);
           await load(false);
         } catch (e) {
-          showError(e.message || 'Failed to force delete');
+          console.error('Force delete error:', e);
+          showError(e.message || 'Failed to force delete department');
         }
       },
       'danger',
-      'Force Delete All',
+      'Yes, Delete Everything',
       'Cancel'
     );
   };
@@ -658,8 +700,8 @@ export const BatchesPage = () => {
                           e.stopPropagation();
                           forceBatchDelete(year);
                         }}
-                        className="sm:opacity-0 sm:group-hover:opacity-100 p-1.5 sm:p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
-                        title="Force Delete Batch (Delete with all related data)"
+                        className="sm:opacity-0 sm:group-hover:opacity-100 p-1.5 sm:p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800 transition-colors"
+                        title="Force Delete Batch - Contains departments with related data (students, courses, sessions, etc.)"
                       >
                         <Trash2 className="w-4 h-4 stroke-2" />
                       </button>
@@ -670,7 +712,7 @@ export const BatchesPage = () => {
                           deleteBatch(year);
                         }}
                         className="sm:opacity-0 sm:group-hover:opacity-100 p-1.5 sm:p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                        title="Delete Batch"
+                        title="Delete Batch (No related data)"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -722,23 +764,37 @@ export const BatchesPage = () => {
                                   >
                                     <Edit className="w-4 h-4"/>
                                   </button>
-                                  {batchRelations[batch._id]?.hasRelatedData ? (
-                                    <button 
-                                      onClick={() => forceRemove(batch._id)} 
-                                      className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors" 
-                                      title="Force Delete (Delete with all related data)"
-                                    >
-                                      <Trash2 className="w-4 h-4 stroke-2"/>
-                                    </button>
-                                  ) : (
-                                    <button 
-                                      onClick={() => remove(batch._id)} 
-                                      className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" 
-                                      title="Delete"
-                                    >
-                                      <Trash2 className="w-4 h-4"/>
-                                    </button>
-                                  )}
+                                  {(() => {
+                                    const relations = batchRelations[batch._id];
+                                    const hasRelatedData = relations?.hasRelatedData;
+                                    
+                                    // Show loading state if relations haven't been loaded yet
+                                    if (relations === undefined) {
+                                      return (
+                                        <button disabled className="p-2 text-gray-400 rounded-lg" title="Loading relations...">
+                                          <LoadingSpinner size="sm" />
+                                        </button>
+                                      );
+                                    }
+                                    
+                                    return hasRelatedData ? (
+                                      <button 
+                                        onClick={() => forceRemove(batch._id)} 
+                                        className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800 transition-colors" 
+                                        title={`Force Delete Required - Has related data: ${relations.relatedData?.students || 0} students, ${relations.relatedData?.courses || 0} courses, ${relations.relatedData?.sessions || 0} sessions, ${relations.relatedData?.enrollments || 0} enrollments, ${relations.relatedData?.attendanceRecords || 0} attendance records, ${relations.relatedData?.scanRecords || 0} scan records`}
+                                      >
+                                        <Trash2 className="w-4 h-4 stroke-2"/>
+                                      </button>
+                                    ) : (
+                                      <button 
+                                        onClick={() => remove(batch._id)} 
+                                        className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" 
+                                        title="Delete Department (No related data)"
+                                      >
+                                        <Trash2 className="w-4 h-4"/>
+                                      </button>
+                                    );
+                                  })()}
                                 </div>
                               </td>
                             </tr>
@@ -791,23 +847,40 @@ export const BatchesPage = () => {
                                 <Edit className="w-4 h-4"/>
                                 Edit
                               </button>
-                              {batchRelations[batch._id]?.hasRelatedData ? (
-                                <button 
-                                  onClick={() => forceRemove(batch._id)} 
-                                  className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg transition-colors text-sm font-medium"
-                                >
-                                  <Trash2 className="w-4 h-4 stroke-2"/>
-                                  Force Delete
-                                </button>
-                              ) : (
-                                <button 
-                                  onClick={() => remove(batch._id)} 
-                                  className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-sm font-medium"
-                                >
-                                  <Trash2 className="w-4 h-4"/>
-                                  Delete
-                                </button>
-                              )}
+                              {(() => {
+                                const relations = batchRelations[batch._id];
+                                const hasRelatedData = relations?.hasRelatedData;
+                                
+                                // Show loading state if relations haven't been loaded yet
+                                if (relations === undefined) {
+                                  return (
+                                    <button disabled className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 text-gray-400 bg-gray-50 dark:bg-gray-900/20 rounded-lg text-sm font-medium" title="Loading relations...">
+                                      <LoadingSpinner size="sm" />
+                                      Loading...
+                                    </button>
+                                  );
+                                }
+                                
+                                return hasRelatedData ? (
+                                  <button 
+                                    onClick={() => forceRemove(batch._id)} 
+                                    className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-800 transition-colors text-sm font-medium"
+                                    title={`Force Delete Required - Has related data: ${relations.relatedData?.students || 0} students, ${relations.relatedData?.courses || 0} courses, ${relations.relatedData?.sessions || 0} sessions`}
+                                  >
+                                    <Trash2 className="w-4 h-4 stroke-2"/>
+                                    Force Delete
+                                  </button>
+                                ) : (
+                                  <button 
+                                    onClick={() => remove(batch._id)} 
+                                    className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-sm font-medium"
+                                    title="Delete Department (No related data)"
+                                  >
+                                    <Trash2 className="w-4 h-4"/>
+                                    Delete
+                                  </button>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
